@@ -42,6 +42,7 @@ shellcheck
 shfmt
 srcs
 starlark
+subdirs
 tailnet
 tbhb
 tbhbdrafts
