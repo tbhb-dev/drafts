@@ -90,16 +90,22 @@ buildifier_test(
 )
 
 # The repository's shape. Only these top-level directories may exist; add a
-# new one here in the change that first uses it.
+# new one here in the change that first uses it. tools/ holds only the
+# interim/ copy of ascm's PR and attribution scripts.
 repo_layout_test(
     name = "repo_layout_test",
     srcs = [":repo_files"],
+    allowed_subdirs = {"tools": ["interim"]},
+    scripts = {"tools": "pep723"},
     top_level_dirs = [
+        ".agents",
         ".claude",
+        ".codex",
         ".github",
         ".vale",
         "LICENSES",
         "drafts",
+        "tools",
     ],
 )
 
@@ -132,6 +138,11 @@ tombi_test(
     name = "tombi_test",
     srcs = [":repo_files"],
     config = "tombi.toml",
+    schemas = {
+        "https://www.schemastore.org/partial-pytest.json": "@schemastore_partial_pytest//file",
+        "https://www.schemastore.org/ruff.json": "@schemastore_ruff//file",
+        "https://www.schemastore.org/uv.json": "@schemastore_uv//file",
+    },
 )
 
 rumdl_test(
@@ -216,8 +227,12 @@ FORMATTERS = [
 ]
 
 # Test fixtures hold deliberately malformed files, which no formatter may
-# fix.
-FORMAT_EXCLUDE = ["*/testdata/*"]
+# fix. tools/interim/ is a verbatim copy of ascm's scripts, formatted at the
+# source.
+FORMAT_EXCLUDE = [
+    "*/testdata/*",
+    "tools/interim/*",
+]
 
 format(
     name = "format",
