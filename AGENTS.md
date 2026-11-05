@@ -13,7 +13,7 @@ This is tbhb-dev/drafts, the public repository of working design drafts for tbhb
 
 Put each draft in its own directory under `drafts/`, with the main document as `README.md`. Keep only configuration at the repository root. Title its directory after the topic.
 
-- A draft isn't an adopted decision. Adoption belongs to the session of the repository it concerns.
+- A draft isn't an adopted decision. Adoption belongs to the repository it concerns.
 - Keep each qualification beside the claim it qualifies: draft, open question, undecided, decided by the operator, unverified.
 - Describe the intended system directly when drafting architecture, keep unresolved choices explicit, and never claim a proposed feature exists today.
 - Leave an earlier draft as a record of its date. Write a new one rather than rewriting its history.
