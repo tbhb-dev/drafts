@@ -1,0 +1,15 @@
+{
+  "includeCoAuthoredBy": false,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "enabledMcpjsonServers": [
+    "awrel"
+  ],
+  "permissions": {
+    "allow": [
+      "mcp__awrel"
+    ]
+  }
+}
