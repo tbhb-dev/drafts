@@ -29,9 +29,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Bazel 9.x only, the version .bazelversion pins, on Linux (x86_64 and
-  # arm64) and macOS (arm64). The checks that need the network or GitHub's
-  # API run on Linux only, in the repo job; they do not depend on the OS.
+  # Bazel 9.x only, the version .bazelversion pins, on Linux arm64 only:
+  # drafts hold no platform-specific code. The checks that need the network
+  # or GitHub's API run in the repo job.
   bazel:
     name: "bazel (${{ matrix.os }})"
     runs-on: ${{ matrix.os }}
@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-26.04, ubuntu-26.04-arm, macos-26]
+        os: [ubuntu-26.04-arm]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -82,6 +82,7 @@ jobs:
       contents: read
     uses: tbhb-dev/rules/.github/workflows/repo-checks.yml@dae4946242a94a708b730a88c514467d4e1f00c4  # main
     with:
+      runs-on: ubuntu-26.04-arm
       timeout-minutes: 10
       pip-audit-target: ""
       module-dirs: .
@@ -93,7 +94,7 @@ jobs:
     name: conclusion
     if: always()
     needs: [bazel, repo]
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 5
     steps:
       - name: Fail if any needed job did not succeed
