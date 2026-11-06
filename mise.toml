@@ -4,7 +4,7 @@
 
 # Tool bootstrap. Bazel pins and runs every gate (`bazelisk test //...`);
 # mise provides bazelisk and prek, and puts the Bazel-pinned tools the hooks
-# call on PATH. The only tasks are the interim PR scripts.
+# call on PATH. The only tasks wrap the tbhbdev alpha PR commands.
 
 [settings]
 lockfile = true
@@ -25,17 +25,17 @@ _.path = [".bazel_env/bin"]
 [tools]
 bazelisk = "1.30.0"
 prek = "0.5.9"
-# Runs the interim attribution hooks and the interim PR script (uv run).
+# Syncs the repo-level Python environment in pyproject.toml.
 uv = "0.13.6"
 
-# Interim until the real PR tooling lands; see tools/interim/pull_request.py.
+# Interim until the real PR tooling lands; wraps `tbhbdev alpha pr`.
 # Usage: mise run pr -- check | create [--dry-run] | edit --pr N
 [tasks.pr]
 description = "Check a PR draft and open or update the PR from it (interim)"
-run = "uv run python -m tools.interim.pull_request"
+run = "tbhbdev alpha pr"
 
-# Interim until the real PR tooling lands; see tools/interim/squash_merge.py.
+# Interim until the real PR tooling lands; wraps `tbhbdev alpha merge`.
 # Usage: mise run merge -- PR [--dry-run].
 [tasks.merge]
 description = "Squash-merge an approved PR with a plain-text commit message (interim)"
-run = "uv run python -m tools.interim.squash_merge"
+run = "tbhbdev alpha merge"

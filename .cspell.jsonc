@@ -11,8 +11,6 @@
     "MODULE.bazel.lock",
     "mise.lock",
     "tmp/**/*",
-    // A verbatim copy of ascm's scripts, linted at the source in ascm.
-    "tools/interim/**/*",
     "uv.lock"
   ],
   "dictionaryDefinitions": [

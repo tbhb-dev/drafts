@@ -2,7 +2,7 @@
 # Copyright Tony Burns
 
 ---
-# Git hooks for this clone, installed by `prek install`. Hooks call the Bazel-pinned
+# Git hooks for this clone, installed by `tbhbdev alpha install`. Hooks call the Bazel-pinned
 # tools through the bazel_env shims in .bazel_env/bin (`bazelisk run
 # //:bazel_env` builds them), never `bazel run`, so a running build's server lock can't stall a
 # commit. `bazel test //...` runs every gate, whole-tree ones included.
