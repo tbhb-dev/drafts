@@ -45,6 +45,7 @@ starlark
 subdirs
 tailnet
 tbhb
+tbhbdev
 tbhbdrafts
 testdata
 tfstate
