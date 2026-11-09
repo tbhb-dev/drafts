@@ -38,7 +38,7 @@ _.path = [".bazel_env/bin"]
 bazelisk = "1.30.0"
 prek = "0.5.9"
 # Syncs the repo-level Python environment in pyproject.toml.
-uv = "0.13.6"
+uv = "0.13.7"
 
 # Interim until the real PR tooling lands; wraps `tbhbdev alpha pr`.
 # Usage: mise run pr -- check | create [--dry-run] | edit --pr N
