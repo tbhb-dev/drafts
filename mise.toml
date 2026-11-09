@@ -36,7 +36,7 @@ _.path = [".bazel_env/bin"]
 
 [tools]
 bazelisk = "1.30.0"
-prek = "0.5.9"
+prek = "0.5.10"
 # Syncs the repo-level Python environment in pyproject.toml.
 uv = "0.13.7"
 
