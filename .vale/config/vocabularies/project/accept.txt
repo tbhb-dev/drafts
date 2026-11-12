@@ -1,6 +1,7 @@
 [Ff]rontmatter
 ascm
 Bazel
+cgo
 gitleaks
 prek
 tbhb

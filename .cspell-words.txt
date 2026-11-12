@@ -10,6 +10,7 @@ buildifier
 bxox
 cgnat
 complexipy
+distroless
 frontmatter
 genrule
 hardwrap
