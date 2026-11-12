@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright Tony Burns -->
+
 # Agent capacity container image
 
 Draft of 2026-11-12. It proposes a container image for `agent-capacity`. The proposal describes future work, and the project hasn't published an image. The operator has one open question, in the last section.
@@ -14,7 +17,7 @@ Go rules in this organization (`tbhb_rules_go`) export lint, coverage, mutation,
 
 ## Mounts and credentials
 
-`serve` reads two places. A spool directory stores the snapshots the `statusline` command writes, and the Codex sessions directory holds rollout files. Both mount read-only. By default, the image sets `AGENT_CAPACITY_SPOOL_DIR` to `/spool` and `CODEX_HOME` to `/codex`. The container runs with a user ID that can read the spool, which is mode 0700.
+`serve` reads two places. A spool directory stores the snapshots the `statusline` command writes, and the host's Codex sessions folder holds rollout files. Both mount read-only. For Codex, the image mounts only the host's sessions folder at `/codex/sessions` and sets `CODEX_HOME` to `/codex`. Because the rest of the Codex home contains the sign-in file, the image never mounts it. By default, the image sets `AGENT_CAPACITY_SPOOL_DIR` to `/spool`. To read the spool, which is mode 0700, the container runs with a user ID that has access to it.
 
 The image and mounts exclude sign-in and token directories. They also exclude configuration directories. Standard `OTEL_EXPORTER_OTLP_*` variables supply the OTLP destination at run time.
 
