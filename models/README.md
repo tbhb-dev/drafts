@@ -13,8 +13,8 @@ This page says which models tbhb-dev runs and what each suits. Read it before pi
 - Codex is the default harness for peer agents. Claude runs a peer agent only where Codex can't, such as work that needs an operating-system sandbox.
 - Codex is the default for building. Claude builds only for a gap that the Models table lists.
 - Codex `gpt-6.1-sol` is the second model family for code review. Codex and Antigravity are full peers for the review read, and the reviewer of record checks every finding. Claude reviews only as the signer.
-- Antigravity runs top-level on the lab hosts, and its runs don't commit or push until someone has shown its identity trailers come out right. Until then it hands its output back as files, and the session that asked for the work reviews and commits them.
-- During the Antigravity trial, new design and build work goes to Antigravity first, then Codex. Claude takes only coordination, review, and work that neither can do. The trial overrides the planning-and-design and Codex-builds lines preceding it. Each owner records the quality of a task in [OBSERVATIONS.md](OBSERVATIONS.md).
+- Antigravity runs top-level on the lab hosts, and its runs don't commit or push until the code that sets its identity trailers is on the run's own path. Until then it hands its output back as files, and the session that asked for the work reviews and commits them.
+- During the Antigravity trial, new design and build work goes to Antigravity first, then Codex. Jobs that need shell commands or research go to Codex for now, because headless Antigravity auto-denies shell commands. Claude takes only coordination, review, and work that neither can do. The trial overrides the planning-and-design and Codex-builds lines preceding it. Each owner records the quality of a task in [OBSERVATIONS.md](OBSERVATIONS.md).
 - Any API spend needs @tbhb's approval first.
 
 ## Models
@@ -23,10 +23,10 @@ This page says which models tbhb-dev runs and what each suits. Read it before pi
 | --- | --- | --- |
 | Planning and design | Opus 5.5 or Fable 5.2 at medium effort | Sonnet or Haiku |
 | Building | Codex `gpt-6.1-sol` by default. Claude builds only where Codex can't, such as work that needs an operating-system sandbox. When Claude builds, it runs on Sonnet | Opus 5.5 or Fable 5.2 for routine edits that a cheaper model handles |
-| Code review | Codex `gpt-6.1-sol` and Antigravity `gemini-4-argon-high` as full peers for the review read, with Antigravity on hold. How well Antigravity reviews is unverified. The reviewer of record checks every finding and signs | Haiku as the reviewer of record |
-| Read-only checks and scans | Antigravity `gemini-4-argon-high` first while it has quota, once it's off hold, with its results unverified. Until then, Codex or Sonnet. Sonnet for tracker checks against main. Haiku for log scans that a person or Sonnet confirms | Haiku alone on checks where a miss matters |
+| Code review | Codex `gpt-6.1-sol` and Antigravity `gemini-4-argon-high` as full peers for the review read. How well Antigravity reviews is unverified. The reviewer of record checks every finding and signs | Haiku as the reviewer of record |
+| Read-only checks and scans | Antigravity `gemini-4-argon-high` first while it has quota, with its results unverified. Until then, Codex or Sonnet. Sonnet for tracker checks against main. Haiku for log scans that a person or Sonnet confirms | Haiku alone on checks where a miss matters |
 | Coordination sessions | Claude Code on Opus. Sonnet is the default for other Claude Code sessions. Codex and Antigravity are unverified for this job | Sonnet for planning or design inside the session |
-| First-pass triage | Haiku, and a person or Sonnet confirms its result. Antigravity `gemini-4-argon-high` first while it has quota, once it's off hold, unverified | Haiku deciding whether a change is on main from commit subjects alone |
+| First-pass triage | Haiku, and a person or Sonnet confirms its result. Antigravity `gemini-4-argon-high` first while it has quota, unverified | Haiku deciding whether a change is on main from commit subjects alone |
 
 Claude models share one subscription's quota, and Codex runs on its own subscription. Neither bills per token, and how Antigravity bills is unverified. Each has limits, and the shared Claude sign-in has hit its 5-hour limit. No one has verified the exact quota for each model.
 
@@ -34,7 +34,7 @@ Antigravity also offers Gemini 4 Carbon (low, medium, and high), Gemini 4 Hydrog
 
 ## Routing by quota
 
-Pick the harness by its remaining weekly headroom. Send read-only work, such as reviews, log scans, state checks, and triage, to the harness with the most headroom. Antigravity takes read-only peer work first while it has quota, but only once it's off hold. Keep builds on Codex while it has headroom, and fall back to Sonnet when Codex is out. Every Claude subagent call states its model. That's Sonnet or Haiku, except for planning, which runs on Opus 5.5 or Fable 5.2.
+Pick the harness by its remaining weekly headroom. Send read-only work, such as reviews, log scans, state checks, and triage, to the harness with the most headroom. Antigravity takes read-only peer work first while it has quota. Keep builds on Codex while it has headroom, and fall back to Sonnet when Codex is out. Every Claude subagent call states its model. That's Sonnet or Haiku, except for planning, which runs on Opus 5.5 or Fable 5.2.
 
 ## Not yet decided
 
