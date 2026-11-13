@@ -101,6 +101,7 @@ repo_layout_test(
         ".vale",
         "LICENSES",
         "drafts",
+        "models",
     ],
 )
 
