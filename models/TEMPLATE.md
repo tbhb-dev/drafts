@@ -8,12 +8,12 @@
 
 The page is short. It has recommendations and standing rulings, and no record of when or by whom a finding came.
 
-## Model row
+## Job row
 
-Add a row to the Models table in [README.md](README.md).
+Add a row to the Models table in [README.md](README.md), one row for each job.
 
 ```markdown
-| <model as named elsewhere on the page> | <what it suits, in one line> | <what it doesn't suit, or Unverified> |
+| <job> | <models and harnesses that fit, with unverified beside any claim that lacks support> | <what not to use for the job> |
 ```
 
 ## Observation line
