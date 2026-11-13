@@ -8,6 +8,7 @@ This is tbhb-dev/drafts, the public repository of working design drafts for tbhb
 - Never write a public IP address in a commit, a pull request, or a draft. The `public-ipv4` gitleaks rule enforces this.
 - Secrets live in 1Password only. Never paste one into chat or commit one to git.
 - A draft informs a change elsewhere. The final docs go in the repository that makes the change.
+- Before choosing a model for a subagent or peer run, read models/README.md in tbhb-dev/wiki.
 
 ## Writing a draft
 
