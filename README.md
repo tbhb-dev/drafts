@@ -6,6 +6,8 @@ This public repository holds working design drafts for tbhb-dev work. A draft is
 
 Each draft is a directory under `drafts/`, named for its subject. Its main document is `README.md`, beside any supporting files.
 
+The [model roster](models/README.md) is current guidance, not a draft: which models tbhb-dev runs and which tasks each suits.
+
 ## Workflow
 
 Every draft lands through a pull request. See [AGENTS.md](AGENTS.md) for the setup and the rules.
