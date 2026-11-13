@@ -31,3 +31,6 @@ This file backs the recommendations in [README.md](README.md). Each line is one 
 - Succeeded at stopping `git push` and `git reset --hard` through a `PreToolUse` hook in headless runs. Exit code 2 and a stdout `decision` of `deny` both worked, and the model saw the reason text. A hook that crashes, times out, or lacks its interpreter is untested.
 - Failed at blocking `git push` through the `--settings` permissions key. None of seven shapes tried stopped the push, and the flag rejects unknown keys such as `deny`, `hooks`, and `sandbox`. Rules saved by `/permissions` are untested.
 - Mixed on settings keys. `--settings` accepted `statusLine` and `model`, but its schema isn't documented in the help text. Each key needs a probe.
+- Failed at writing a design draft from a nested folder of CSV results. Headless runs ended within seconds with no output on all three tries, because headless mode auto-denied the shell command that read the inputs.
+- Succeeded at the same draft once the inputs were flat files in one folder. The figures it quoted were accurate against the source results, and one run is the whole test.
+- Mixed on labelling evidence in that draft. Its prose was dense, and it labelled some inferred claims as measured, so check each label against the data.
