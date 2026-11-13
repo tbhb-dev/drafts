@@ -13,7 +13,8 @@ This page says which models tbhb-dev runs and what each suits. Read it before pi
 - Codex is the default harness for peer agents. Claude runs a peer agent only where Codex can't, such as work that needs an operating-system sandbox.
 - Codex is the default for building. Claude builds only for a gap that the Models table lists.
 - Codex `gpt-6.1-sol` is the second model family for code review. Codex and Antigravity are full peers for the review read, and the reviewer of record checks every finding. Claude reviews only as the signer.
-- Antigravity is on hold. Don't start Antigravity runs until someone has shown its identity trailers come out right, and stop any run in flight.
+- Antigravity runs top-level on the lab hosts, and its runs make no commits or pushes until someone has shown its identity trailers come out right. Until then it hands its output back as files, and the owning session reviews and commits them.
+- During the Antigravity trial, new design and build work goes to Antigravity first, then Codex. Claude takes only coordination, review, and work that neither can do. The trial overrides the planning-and-design and Codex-builds lines above. Each owner records the quality of a task in [OBSERVATIONS.md](OBSERVATIONS.md).
 - Any API spend needs @tbhb's approval first.
 
 ## Models
