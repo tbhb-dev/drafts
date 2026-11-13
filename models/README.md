@@ -10,8 +10,8 @@ This page says which models tbhb-dev runs and what each suits. Read it before pi
 - Planning and design run on Opus 5.5 or Fable 5.2 at medium effort, never on Sonnet.
 - Sonnet is the default model for other sessions, and it stays the fallback.
 - Haiku is never the reviewer of record.
-- Codex is the default harness for peer agents. Claude runs a peer agent only for a listed gap, such as an OS-sandbox spike.
-- Codex `gpt-6.1-sol` is the second model family in class D, K, and guard reviews.
+- Codex is the default harness for peer agents. Claude runs a peer agent only where Codex can't, such as work that needs an operating-system sandbox.
+- Codex `gpt-6.1-sol` is the second model family for code review.
 - Any API spend needs @tbhb's approval first.
 
 ## Models
@@ -20,15 +20,19 @@ This page says which models tbhb-dev runs and what each suits. Read it before pi
 | --- | --- | --- |
 | Opus 5.5 | Planning, design, and proposals | Routine edits that a cheaper model handles |
 | Fable 5.2 | The same work as Opus 5.5 | Routine edits that a cheaper model handles |
-| Sonnet | Script fixes, read-only tracker checks, search with citations, and mechanical edits | Planning and design |
+| Sonnet | Script fixes and read-only tracker checks. Mechanical edits and search with citations are unverified | Planning and design |
 | Haiku | A first pass over logs, classification, and mechanical checks that a person or Sonnet confirms | Review, checks where a miss matters, and deciding whether a change is on main from log subjects alone |
 | Codex `gpt-6.1-sol` | Peer agents, builds, and second-family code review | Unverified |
 
 Claude models share one subscription's quota, and Codex runs on its own subscription. Neither bills per token. Each has limits, and the shared Claude sign-in has hit its 5-hour limit. No one has verified the exact quota for each model.
 
+## Routing by quota
+
+Pick the harness by its remaining weekly headroom. Send read-only work, such as reviews, log scans, state checks, and triage, to the harness with the most headroom. Keep builds on Codex while it has headroom. Every Claude subagent call states its model, and that model is Sonnet or Haiku.
+
 ## Not yet decided
 
-Host ops, console work, grading evaluations, and approver verdicts have no recommendation yet. The approver model spike decides the approver verdicts row.
+Host ops, console work, grading evaluations, and approver verdicts have no recommendation yet.
 
 ## Updating this page
 
