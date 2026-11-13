@@ -3,29 +3,15 @@
 
 # Model roster writer checklist
 
-Follow this list before opening a PR against [README.md](README.md). Use the row formats in [TEMPLATE.md](TEMPLATE.md).
+Follow this list before opening a PR against [README.md](README.md) or [OBSERVATIONS.md](OBSERVATIONS.md). Use the formats in [TEMPLATE.md](TEMPLATE.md).
 
-## Before writing
+## Page shape
 
-- [ ] The evidence shows the model succeeded or failed at the task. A mixed or partial result isn't an observation yet.
-- [ ] The task matches a task type in the task-fit table. A new task type needs a new task-fit row in the same PR.
-- [ ] If the model has no roster row yet, add one first.
-
-## Each observation
-
-- [ ] The date is the day the work ran, in `yyyy-mm-dd` form.
-- [ ] The session column holds a generic role, such as Coordinator or Reviewer, and never a session name.
-- [ ] The outcome starts with Succeeded or Failed and says what the model did in one or two sentences.
-- [ ] Cite a public commit or PR as owner/repo#N. Otherwise write `Internal record, yyyy-mm-dd, task type, outcome`, and never a private path, repository, or PR number.
-- [ ] The outcome says who spot-checked the work and how, such as three commits checked.
-- [ ] The row goes at the top of the table.
-
-## Task-fit and roster changes
-
-- [ ] A task-fit change rests on a ruling or on repeated observations, and its evidence column cites them.
-- [ ] A claim without evidence says `unverified`.
-- [ ] A row never contradicts a standing ruling by @tbhb.
-- [ ] A cost cell says subscription quota or API spend. API spend cites @tbhb's approval and its budget.
+- [ ] The README has standing rulings, the Models table, and what's undecided. It has no dates, run ids, session names, spot-checker names, sample counts, or timestamps.
+- [ ] Evidence goes in OBSERVATIONS.md as one line per finding. A mixed result is one line that says Mixed and what to do about it.
+- [ ] A recommendation rests on a ruling or an observation. A claim without support says `unverified`.
+- [ ] A row never contradicts a standing ruling.
+- [ ] A cost statement says subscription quota or API spend, and API spend cites @tbhb's approval.
 
 ## Privacy and style
 
@@ -35,5 +21,4 @@ Follow this list before opening a PR against [README.md](README.md). Use the row
 
 ## The PR
 
-- [ ] One PR per session per day carries every observation from that day.
 - [ ] The PR body fills every section of the PR template.

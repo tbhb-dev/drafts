@@ -6,28 +6,20 @@
 
 # Model roster entry template
 
-Copy the row that matches the change into [README.md](README.md). Replace each placeholder in angle brackets and keep the column order.
+The page is short. It has recommendations and standing rulings, and no record of when or by whom a finding came.
 
-## Observation
+## Model row
 
-Add the row at the top of the Observations table, under the header row.
+Add a row to the Models table in [README.md](README.md).
 
 ```markdown
-| <yyyy-mm-dd> | <role, never a session name> | <model as the roster names it> | <task type from the task-fit table> | <Succeeded or Failed. One or two sentences on what it did.> | <public commit or PR as owner/repo#N, or "Internal record, yyyy-mm-dd, task type, outcome"> |
+| <model as named elsewhere on the page> | <what it suits, in one line> | <what it doesn't suit, or Unverified> |
 ```
 
-## Task-fit row
+## Observation line
 
-Change a task-fit row only when observations or a ruling support it.
-
-```markdown
-| <task type> | <model, and effort if a ruling sets one> | <model or Unverified> | <model or Unverified> | <ruling with its internal record date, or observation dates and models> |
-```
-
-## Roster row
-
-Add a roster row for a model before any task-fit row or observation cites it.
+Add a line under the model's heading in [OBSERVATIONS.md](OBSERVATIONS.md).
 
 ```markdown
-| <model> | <vendor>, <harness> | <account or billing, without addresses> | <Subscription quota or API spend with its approval> | <known limits, or Unverified> |
+- <Succeeded, Failed, or Mixed> at <task type>. <One sentence on what it did, and the limit of the test.>
 ```
