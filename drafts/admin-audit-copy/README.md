@@ -5,50 +5,124 @@
 
 | Status | Owner | Updated | Open decisions | Needs from the operator |
 | --- | --- | --- | --- | --- |
-| Draft | Platform engineering | 2026-11-14 | 0 | Nothing |
+| Draft | Platform engineering | 2026-11-14 | 0 | Review |
 
-Draft of 2026-11-14, proposing a copy mechanism that `tbhbdev admin` doesn't have today. The hash chain and the `enabled` marker it builds on exist only after tools#197 merges, since neither is on `main` yet.
-
-On 2026-11-14 the operator decided (record `2026-11-14-open-233`) that an off-host copy of the audit log needs the receiver's acknowledgment before the tool's first credential read, with the tool's user as the trusted boundary on its host. That answer came on the earlier broker design draft. Nobody built the broker, because the administrator VM's own tool replaced it. This draft applies the answer to that tool.
+This draft proposes a copy mechanism that `tbhbdev admin` doesn't have yet. It builds on the hash chain in `audit.py`, which tbhb-dev/tools#197 merged into tools `main` (read). A report, unverified here, says the operator accepted one principle for this copy. The receiver must acknowledge a call before the tool's first credential read, and the tool's user marks the trusted boundary on its own host. This draft applies that principle.
 
 ## Summary
 
-The tool appends each call to a local, hash-chained log. A process running as the same user can still rewrite that file. This draft adds a receiver on another host. The tool sends every new line there and reads the App key only after the receiver acknowledges the line.
+The tool appends each call to a local, hash-chained log. Any process running as the same user can rewrite that file. This draft adds a receiver on another host. The tool sends every new line there, and it reads the App key only after the receiver acknowledges the call's own `before` record. When the copy fails, the call refuses instead of skipping the copy.
+
+## The local log today
+
+Everything in this section comes from reading `audit.py` and `request.py` on tools `main`.
+
+- `Audit.write` opens `calls.jsonl` with `O_APPEND` and takes an exclusive `flock`. Under that lock it confirms the file is still the log and runs `heal_tail`. It computes `prev` with `chain_head` and writes one JSON line. A sync of the file follows. When the write or the sync fails, `roll_back` truncates the file to its earlier size and syncs it.
+- `chain_head` returns the Secure Hash Algorithm (SHA) 256 hex digest of the last line, without its trailing line feed (LF). It reads backward in 4096-byte blocks. An empty file yields 64 zeros.
+- `heal_tail` appends one LF when the file doesn't end in one. It leaves the unfinished bytes in place. Its docstring gives a failed `roll_back` as the cause. A writer that stopped in the middle of a write would leave the same kind of tail (inferred, not tested). The fragment then becomes a line of its own, and the next record's `prev` hashes it. A fragment parses as JSON only when the writer lost nothing but the LF.
+- `json.dumps` runs with its default arguments and escapes every character outside bytes 32 through 126. Each line contains only those bytes.
+- `write` doesn't limit the size of a record. The caller supplies `reason` and `path`.
 
 ## Proposal
 
-- **The receiver.** An unprivileged account on a Linux lab host. Coordination picks the host, and the decision record `2026-11-14-audit-receiver-linux-lab-host` holds that choice. Ops creates the account, the log file in its home, and one `authorized_keys` entry. The entry uses the `restrict` option, which turns off terminals and forwarding, and a forced command. Nobody uses the account interactively. Its login shell runs only the forced command. The host needs a plain shell that follows the Portable Operating System Interface (POSIX) standard.
-- **The forced command.** It takes two requests. An append request reads one line from standard input and requires valid JSON under 64 KiB. It requires `prev` to equal the Secure Hash Algorithm (SHA) 256 digest of the file's current last line, or 64 zeros for an empty file. It appends the line with `O_APPEND` and syncs the file. Then it prints `ack 1 <n> <digest>`, where `n` is the line count and `digest` is the SHA digest of the appended line. A line equal to the current last line gets the same acknowledgment without a second append, so a retry is safe. Any other line fails with a nonzero exit and no acknowledgment. A head request is read-only and prints the same `ack 1 <n> <digest>` for the current last line.
-- **The sender.** After each append to `calls.jsonl`, the tool runs `ssh` with `BatchMode=yes` and `StrictHostKeyChecking=yes` against a pinned `known_hosts` entry in the audit directory. It first sends a head request and finds the acknowledged digest in its local log. Then it sends each later line, oldest first. If the digest is absent from the local log, the tool refuses. A state file beside the log caches the last acknowledgment but anchors nothing. After every acknowledgment the tool checks `n` against its own line count and the digest against the line it sent.
-- **The gate.** Before a call reads the key, the tool appends the `before` record and sends the backlog with it. It then waits for an acknowledgment whose digest matches the record, and without one it refuses with `audit_copy_unacknowledged`. The key read and the HTTP request come after that check. The `after` record isn't gated. The call has already run by then, so refusing would only drop a record, and the next key call sends the backlog first.
-- **Calls without a key read.** Dry runs and policy refusals write the local record and try to send it. A failure doesn't stop them. The receiver's chain check then forces the next key call to send those lines first.
+### Receiver
 
-## Failure behavior
+An unprivileged account on a Linux host in the lab receives the copy, and the receiver's operator picks the host. Its forced command is a small Python 3 program from the `tbhbdev` package. The account's directory contains numbered log segments, a lock file, and a head file. In the head file, one line of the form `<segment> <n> <digest> <length>` records the receiver's position, where `n` counts every line the receiver has acknowledged across all segments, `digest` is the SHA-256 of the last such line, and `length` gives the byte size of the current segment up to that line. A fresh receiver starts at `1 0 <64 zeros> 0`. Segment 1 starts empty.
 
-Refusal replaces skipping. The key call ends before the key read when the receiver is unreachable, when a send times out, when the receiver rejects a line, or when a digest differs. It never falls back to the local log alone. `ConnectTimeout` and a total limit of 10 seconds bound each send. The tool doesn't retry inside that window, though the receiver accepts one identical last line twice. A refused call's audit record says why.
+Each request runs under an exclusive lock on the lock file. The forced command keeps that lock from recovery through validation, append, sync, and head update to the acknowledgment. Senders never interleave, and each request sees the head the previous one left.
 
-A second sender or an overlapping send meets the receiver's chain check and fails there. That rejection ends the call as a refusal, which fails closed and costs the caller a retry. A send takes no lock.
+### Wire contract
 
-## Dependence of the `enabled` marker
+The forced command reads the request from `SSH_ORIGINAL_COMMAND`. It accepts exactly two forms and exits nonzero with empty standard output for anything else.
 
-The marker file only opts a host in. After this change the key read also needs a receiver setting in the audit directory, which gives the receiver account and host, and a passing gate. The administrator VM session creates the marker last, after the receiver accepts a test line from the key host. A host with the marker and no receiver setting refuses with `credential_unavailable`.
+- `head` takes no input. It prints the acknowledgment for the current head.
+- `append K`, where `K` is a decimal integer of at least 1 without leading zeros, names the position of the line in the sender's log. Standard input contains exactly one line of at most 65536 bytes, LF included, followed by end of file. The receiver reads at most 65537 bytes and rejects longer input.
 
-## Guarantee and limits
+For `append K`, the receiver compares `K` with its count `n`.
 
-The receiver keeps acknowledged history. A reader can compare it with the local log and find an edited earlier line, because each line contains the digest of the one before it. A compromised tool user can skip the tool and act without a record, as the operator's decision accepts. The same user can also send a forged line that breaks the chain's agreement with the receiver. That attack only denies service, because the receiver then rejects later lines and the gate refuses. The ssh key for the receiver is a credential and belongs in the key host's own user account.
+- When `K` is at most `n`, the receiver doesn't append and prints the acknowledgment for its current head. That line either matches the receiver's history or conflicts with it, and the sender's digest check tells which.
+- When `K` equals `n + 1`, the receiver validates the line. Every byte before the final LF must have a value from 32 through 126. Those bytes must parse as one JSON object under Request for Comments (RFC) 8259, without `NaN` or `Infinity` and without a duplicate member name at any depth. A `prev` member must exist, and its value must be a string of 64 lowercase hex digits equal to the head digest. The receiver doesn't check other members. A valid line goes to the end of the current segment.
+- A larger `K`, or a line that fails validation, ends the request with a nonzero exit and empty standard output.
+
+Every digest in this contract is the SHA-256 of the line's raw bytes without the trailing LF, the same input `chain_head` hashes.
+
+An acknowledgment consists of `ack 1 <n> <digest>` and one LF, with exit status 0. Its `1` names the protocol version. `n` has no leading zeros, and `digest` uses 64 lowercase hex digits. The sender reads at most 128 bytes of standard output. Any other byte, a missing LF, or a nonzero exit counts as a failure, whatever standard error contains.
+
+### Sender
+
+At install, the receiver's operator writes the receiver setting, with the account and host, into the audit directory on the key host. An ssh configuration file and a `known_hosts` file with the receiver's pinned host key go beside it. The tool runs `ssh -F` with that configuration. On the command line it also passes `BatchMode=yes`, `StrictHostKeyChecking=yes`, and `UserKnownHostsFile` set to the pinned file, and ssh gives these precedence over the file.
+
+After each local append, `write` returns the position `K` of the new line, counted under the lock. That return value is new code in `audit.py`. To bring the receiver's count up to `K`, the sender starts from the count cached in a state file beside the log. With no cache it sends `head` first. It sends each later line in order, one `append` request per line, oldest first.
+
+Every acknowledgment `ack 1 <n> <digest>` passes one check. With `n` equal to 0, the digest must equal 64 zeros. Otherwise local line `n` must exist, and its digest must equal `digest`. Since the receiver checked each `prev` when it appended, a matching digest at position `n` shows that its whole history equals local lines 1 through `n`. A line added by the repair command below has no checked `prev`, and the operator's byte comparison covers that one link instead. After a passing check the sender caches `n` and continues from `n + 1`. A failing check refuses the call with `audit_copy_diverged`. For an empty receiver, `head` reports `ack 1 0 <64 zeros>`, and sending starts at local line 1. In any log that `audit.py` started, line 1 has a `prev` of 64 zeros.
+
+Before it sends a line, the sender applies the receiver's validation itself. When a line fails, the sender first sends `head`, in case a repair already moved the receiver past that line, and refuses the call with `audit_copy_damaged` if the receiver's count is still below the line's position. Lines the receiver already acknowledged aren't checked again.
+
+### Gate
+
+Before a call reads the key, the tool appends the `before` record and sends the backlog through that record. It reads the key only after an acknowledgment with `n` at least the record's position passes the check. Without one it refuses with `audit_copy_unacknowledged`. Only then come the key read and the request to GitHub. After the `after` record, the tool tries one more send, but the call's result doesn't depend on it. By then the call has already acted, and the next key call sends any unsent line first.
+
+Dry runs and policy refusals also append and try to send. A failed send doesn't stop them. Those lines then go out ahead of the next key call's own line.
+
+The `enabled` marker keeps its meaning and opts a host in. On top of it, the key read needs the receiver setting and a passing gate. A host with the marker and without the receiver setting refuses with `credential_unavailable`. The operator of the key host creates the marker last, after the install test passes.
+
+## Failure and crash behavior
+
+A call copies in two phases. The gated phase runs from the `before` record to its acknowledgment, and the trailing phase sends the `after` record. Each phase gets one deadline of 10 seconds across all its ssh connections, and each connection also uses `ConnectTimeout`. The sender makes one attempt per request and doesn't retry within a call. In the gated phase, a timeout, a lost connection, a rejection, or a malformed acknowledgment refuses the call with `audit_copy_unacknowledged`, and the refused call's local record names the code. A trailing failure leaves the call's result alone. After a rejected `append`, the sender also clears its cached count, and the next call starts with `head`. Retrying in a later call is safe, because a repeated `K` gets the receiver's head in reply. A backlog too large for one deadline drains across successive refused calls, since each passing acknowledgment updates the cached count.
+
+With a cached count and no backlog, a key call makes two connections, one per phase. Without a cache the sender adds a `head` request, and each backlog line adds one more. An environment write makes at least four, because its lookup of the current environment is a gated call of its own.
+
+An acknowledgment covers only durable history. Each request runs these steps under the lock, and the head file records what that history includes.
+
+1. Truncate the current segment to the head file's `length` and sync it. A partial write from an earlier request goes away here, along with any full line whose head update never happened.
+2. Check the request.
+3. Rotate when the line would push the current segment past the segment size. The receiver creates the next segment as an empty file, truncating any leftover file of that name, and syncs the directory. Then it commits a head file that points at the new segment with `length` 0, the same `n`, and the same digest, by the method in step 5.
+4. Append the line with `O_APPEND` and sync the segment.
+5. Write a new head file to a temporary name, sync it, rename it over the old one, and sync the directory.
+6. Print the acknowledgment.
+
+A crash before step 5 finishes leaves the old head, and the next request's step 1 cuts the extra bytes. A crash inside step 3 leaves at most an empty segment that the head file doesn't name, and the next rotation truncates it. A failed sync ends the request without an acknowledgment, and step 1 runs again next time. After step 5, a crash leaves a durable line without an acknowledgment. The sender refuses that call, and its next request reads the new count from the reply. The receiver rejects every request while a segment is shorter than `length` or after a failed truncation, until its operator repairs that state.
+
+When the receiver's history and the local log disagree, the sender refuses every key call. The receiver's operator repairs the receiver chain after the operator decides how.
+
+A damaged local line, such as a fragment that `heal_tail` ended, blocks every key call with `audit_copy_damaged`. Nobody can fix the fragment in place, because the next record's `prev` hashes it. Recovery needs the operator. After comparing the bytes with the key host's log, the receiver's operator appends that one line on the receiver host. A local repair command does this, skipping the JSON check but keeping the size limit and the byte range check. Once the receiver's count passes the damaged line, sending resumes. During the install test a damaged line has a simpler fix. The operator moves the old log aside without deleting it, and the test runs again against a new log.
+
+## Trust boundary
+
+All files of the receiver belong to the receiver account. Its directory has mode 0700, and the segments, the head file, and the lock file have mode 0600. A key holder gets into the account only through one `authorized_keys` entry, which sets the `restrict` option and the forced command, and the account has no other entry. The `restrict` option turns off terminal allocation and forwarding. It also skips the user's ssh startup file. The receiver's operator locks the account's password, and for that user the ssh server's configuration turns off password and keyboard-interactive login. `sshd` starts the forced command through the account's login shell, which must be a normal shell that follows the Portable Operating System Interface (POSIX). Apart from parsing `SSH_ORIGINAL_COMMAND` as one of its two verbs, the forced command ignores everything the client sends.
+
+Inside that boundary, a key holder can't edit acknowledged lines. Outside it are anyone who controls the receiver account and anyone with root on the receiver host. Either can rewrite history, and this draft treats both as out of scope.
+
+## Rotation and disk bound
+
+The receiver's operator sets a segment size and a total quota. Before an append, the receiver checks whether the line would push the current segment past the segment size. In that case it starts the next segment through step 3 of the crash list, and the head file gets the new segment number with `length` 0. Both the count `n` and the digest continue unchanged. In the new segment, the first line has a `prev` equal to the last digest of the old one. A reader checks the chain across segments by reading them in order. For `head`, the receiver reads the head file and scans no segment.
+
+Rotation never deletes a segment. Instead the receiver rejects an append that would push the sum of its segments past the quota. Disk use stays below the quota plus the head file, and key calls refuse once the quota fills. The receiver's operator then moves old segments off the host, after the operator decides where they go.
+
+Local records need a matching limit. Without one, a record over 65536 bytes would block every later key call. In the mechanism pull request, `audit.py` gains a check that refuses any line over 65536 bytes before the local append, with the code `audit_record_too_large`. A call checks its `before` record against 1024 bytes less than that and leaves room for the `after` record. This draft itself doesn't change tools code.
 
 ## Decisions
 
-Coordination decided these on 2026-11-14 as two-way doors. Each stays reversible in a later change.
+All three are two-way doors. A report says another party decided them. Lacking a public record of that decision, this draft labels each one proposed.
 
-- **D1.** The gate waits on the acknowledgment of the `before` record just written, at the cost of one ssh round trip per key call. Waiting on the previous record's digest would leave the call's own intent uncovered.
-- **D2.** `ConnectTimeout` plus a total limit of 10 seconds. The window permits one retry only, the identical last line the receiver accepts.
-- **D3.** Rotation by size. The receiver rejects a line over 64 KiB, which also stops a compromised sender from filling the volume. Ops picks the rotation threshold.
-- **Receiver.** An unprivileged account on a Linux lab host.
+- **D1, proposed.** The gate waits on the acknowledgment of the call's own `before` record. A gate on the previous record would leave the call's intent outside the copy. The price is at least two ssh connections per key call. One runs before the key read and one after the call.
+- **D2, proposed.** `ConnectTimeout` plus one deadline of 10 seconds for each copy phase, across all its connections. A call doesn't retry. An earlier version allowed one retry of an identical last line, and this one drops it in favor of resending in a later call.
+- **D3, proposed.** Rotation by segment size, with a per-line limit of 65536 bytes and a total quota on the receiver. Rotation keeps the count and the chain going across segments.
+
+## Limits
+
+- A process running as the tool's user can forge a record with a correct `prev` and send it after the local append. The receiver accepts it.
+- The same process can rewrite any local line the receiver hasn't acknowledged yet.
+- It can also skip the tool and act without a record. A report, unverified here, says the operator accepted this limit.
+- A sender can fill the quota or send lines the receiver rejects. Either only denies service, because key calls then refuse.
+- The copy proves nothing until a reader compares it with the local log.
+- Positions assume one local log that only grows. Rotating or replacing `calls.jsonl` breaks the digest check, and key calls refuse with `audit_copy_diverged` until the operator decides how to continue.
+- The receiver's ssh key sits in the tool user's account on the key host, where that user can read it.
 
 ## Plan
 
 1. Review this draft.
-2. On the host Coordination picks, Ops creates the receiver account, the log file, and the key entry.
-3. A tools pull request adds the sender, the gate and the receiver command, with tests against a fake transport. It touches the credential path, so both reviewer families review it.
-4. Ops tests a line from the key host. Then the administrator VM session creates the marker. After that, only Coordination's go stands between the ruleset request and the call.
+2. A tools pull request adds the sender, the gate, the receiver program, the repair command, the position return value, and the record limit in `audit.py`, with tests against a fake transport. It touches the credential path and needs two independent reviews.
+3. On the receiver host, its operator creates the account, the directory, the fresh head file, the ssh server settings, and the key entry. That operator then writes the receiver setting and the ssh configuration on the key host, along with the pinned `known_hosts` file.
+4. For the install test, someone runs a dry run on the key host. That writes a local record, and the sender sends local lines from line 1 through it. The test passes when the receiver's head matches the local head. With a new log, this record becomes the receiver's first line.
+5. The operator of the key host creates the `enabled` marker.
