@@ -73,7 +73,7 @@ The operator decided D1 and D2 on 2026-11-14, and each item states its record. P
 ### D9. Export over HTTP with protobuf to the host's collector
 
 - **Decided:** 2026-11-14, by platform engineering.
-- **Rule:** the service exports OpenTelemetry Protocol (OTLP) data over HTTP to port 4318 and exports trace spans synchronously per reconcile, without the batch processor. Metrics leave through a periodic reader every 60 seconds.
+- **Rule:** the service exports OpenTelemetry Protocol (OTLP) data over HTTP to port 4318 and exports trace spans synchronously per reconcile, without the batch processor. Metrics leave through a periodic reader every 60 seconds. Logs leave over the same endpoint through the OTLP log exporter, with `deployment.environment.name` set, and the collector sends them to Loki. Platform engineering decided on 2026-11-14 that every service sends its logs to Loki, and this entry follows that call.
 - **Undo:** switch the exporter to gRPC on port 4317, which changes the configuration and the dependencies.
 - **Record:** this design's pull request.
 
