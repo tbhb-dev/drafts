@@ -9,7 +9,7 @@ Each claim has one label. Existing means a primary source states it, and the aut
 
 ## GitHub documentation pages
 
-Each page below resolved on 2026-11-13. A resolving page proves only that the page exists, and the claims table says which claims were read in it.
+Each page below resolved on 2026-11-13. A resolving page proves only that the page exists, and the claims table says which claims the author checked against it.
 
 | Short name | URL |
 | --- | --- |
@@ -25,7 +25,7 @@ Each page below resolved on 2026-11-13. A resolving page proves only that the pa
 | Review comment endpoints | <https://docs.github.com/en/rest/pulls/comments> |
 | GitHub App webhook endpoints | <https://docs.github.com/en/rest/apps/webhooks> |
 | GitHub App endpoints | <https://docs.github.com/en/rest/apps/apps> |
-| Generating a JWT | <https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app> |
+| Generating a JSON Web Token (JWT) | <https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app> |
 | Generating an installation token | <https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app> |
 | Registering an App from a manifest | <https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest> |
 
@@ -37,8 +37,8 @@ Each page below resolved on 2026-11-13. A resolving page proves only that the pa
 | `issue_comment` needs Issues read, `check_run` and `check_suite` need Checks read, and `push` needs Contents read | Existing | Webhook events and payloads |
 | Every App receives `installation` and `installation_repositories` by default | Existing | Webhook events and payloads |
 | GitHub caps webhook payloads at 25 MB | Existing, re-read 2026-11-13 | Webhook events and payloads |
-| The webhook signature is an HMAC over the payload contents only, so headers such as `X-GitHub-Delivery` aren't covered | Existing, re-read 2026-11-13 | Validating webhook deliveries |
-| A `pull_request_review_thread` payload carries no GitHub timestamp for the resolve or unresolve itself | Unverified | Webhook events and payloads, not re-read for this field |
+| The webhook signature is a Hash-based Message Authentication Code (HMAC) over the payload contents only, so headers such as `X-GitHub-Delivery` aren't covered | Existing, re-read 2026-11-13 | Validating webhook deliveries |
+| A `pull_request_review_thread` payload doesn't include a GitHub timestamp for the `resolved` or `unresolved` action itself | Unverified | Webhook events and payloads, not re-read for this field |
 | Listing pull requests (PRs), a PR's commits, its reviews, and its requested reviewers needs Pull requests read | Existing | Permissions required for GitHub Apps |
 | The PR files endpoint is under Pull requests read | Existing, re-read 2026-11-13 | Permissions required for GitHub Apps |
 | The PR endpoint can return a diff through the `application/vnd.github.diff` media type | Existing, re-read 2026-11-13 | Pull request endpoints |
@@ -52,10 +52,10 @@ Each page below resolved on 2026-11-13. A resolving page proves only that the pa
 | List endpoints return at most 100 items a page | Existing, re-read 2026-11-13 | Pull request endpoints, `per_page` |
 | Timeline event types include `review_requested`, `ready_for_review`, `convert_to_draft`, `head_ref_force_pushed`, and `reopened` | Existing, re-read 2026-11-13 | Issue event types |
 | A timeline `review_requested` event has `id`, `node_id`, and `created_at` | Existing | Issue event types |
-| The REST review comment endpoints and timeline event types expose no thread resolution state, and review comments carry `diff_hunk` | Existing, re-read 2026-11-13: neither page lists a resolved field or event | Review comment endpoints, Issue event types |
+| The REST review comment endpoints and timeline event types don't expose thread resolution state, and review comments include `diff_hunk` | Existing, re-read 2026-11-13: neither page lists a resolved field or event | Review comment endpoints, Issue event types |
 | GitHub doesn't redeliver failed deliveries automatically | Existing | Handling failed webhook deliveries |
 | Listing and redelivering App webhook deliveries needs a JSON Web Token (JWT) | Existing | GitHub App webhook endpoints |
-| A JWT expires at most 10 minutes ahead, uses RS256, and should set `iat` 60 seconds in the past | Existing | Generating a JWT |
+| A JWT expires at most 10 minutes ahead, uses RS256, and should set `iat` 60 seconds in the past | Existing | Generating a JSON Web Token (JWT) |
 | An installation token lasts one hour, and its request can narrow its permissions | Existing | Generating an installation token |
 | The PR commits endpoint returns at most 250 commits | Existing, re-read 2026-11-13 | Pull request endpoints |
 | The manifest keys are `default_permissions` and `default_events` | Existing | Registering an App from a manifest |

@@ -11,20 +11,20 @@ None.
 
 ## Decided
 
-The operator decided D1 and D2 on 2026-11-14, and each item names its record. Platform engineering decided D3 through D13 on 2026-11-14, each one is a two-way door, and this design's pull request in tbhb-dev/wiki is the record for each.
+The operator decided D1 and D2 on 2026-11-14, and each item states its record. Platform engineering decided D3 through D13 on 2026-11-14, each one is a two-way door, and this design's pull request in tbhb-dev/wiki is the record for each.
 
 ### D1. May tbhb-dev create the read-only GitHub App and install it on all repositories?
 
-- **Decided:** 2026-11-14, by the operator: yes, on the wording then proposed. That wording named three pull request (PR) events and said the App couldn't read source code.
-- **Rule:** the App has exactly two permissions, read access to pull requests and to metadata. It reads PR, review, and commit data from every repository, private ones included, and its private key is a new credential.
-- **Changed afterwards by platform engineering:** the App now subscribes to two PR events, not three, because D11 drops `pull_request_review_thread`. A review also corrected the reach: Pull requests read reaches PR titles, bodies, review text, and PR diffs through the PR and PR files endpoints, so the App can read any code a PR changes, and it doesn't request the Contents, Issues, or Checks permissions.
+- **Decided:** 2026-11-14, by the operator: yes, on the wording then proposed. That wording listed three pull request (PR) events and said the App couldn't read source code.
+- **Rule:** the App has exactly two permissions: read access to metadata and read access to pull requests. It reads PR, review, and commit data from every repository, private ones included, and its private key is a new credential.
+- **Changed afterwards by platform engineering:** the App now subscribes to two PR events instead of three, because D11 drops `pull_request_review_thread`. A review also corrected the description of what the App can read. Pull requests read gives access to PR titles, bodies, review text, and PR diffs through the PR and PR files endpoints, which lets the App read any code a PR changes, although it doesn't request the Contents, Issues, or Checks permissions.
 - **Undo:** uninstall or delete the App, which revokes every token at once.
 - **Record:** the operator's answer in chat, 2026-11-14.
 
 ### D2. May the webhook path face the public internet through a Cloudflare Tunnel at `github-metrics.tbhb.dev`?
 
 - **Decided:** 2026-11-14, by the operator: yes.
-- **Rule:** the tunnel route is limited to `POST /webhook`, and the edge answers `404` to every other path. The tunnel makes outbound connections only, and the service checks each request's signature before it parses the body.
+- **Rule:** the tunnel routes only `POST /webhook`, and the edge answers `404` to every other path. The tunnel makes outbound connections only, and the service checks each request's signature before it parses the body.
 - **Undo:** remove the tunnel route and the DNS record.
 - **Record:** the operator's answer in chat, 2026-11-14.
 
@@ -38,14 +38,14 @@ The operator decided D1 and D2 on 2026-11-14, and each item names its record. Pl
 ### D4. The service stores its state in a small `bbolt` file on a mounted volume
 
 - **Decided:** 2026-11-14, by platform engineering.
-- **Rule:** one `bbolt` file on a writable volume stores the queue, the dedupe table, and the exported span IDs. It also stores metric milestones, watermarks, entity tags, and its own creation time, and the rest of the container is read-only. Restoring an older copy of the file is forbidden, and a damaged file is deleted so the service starts empty.
+- **Rule:** the service writes its whole state to one `bbolt` file on a writable volume. That covers the queue, the dedupe table, the exported span IDs, the metric milestones, the watermarks, the entity tags, and the store's creation time. The rest of the container is read-only. Restoring an older copy of the file is forbidden, and the operator deletes a damaged file so the service starts empty.
 - **Undo:** swap the store behind its interface, such as for SQLite. Losing the file re-exports every span of every PR in scope once, through a fresh backfill, and the creation time keeps metrics from doubling.
 - **Record:** this design's pull request.
 
 ### D5. Child spans export when complete, and the root exports once at the first merge or close
 
 - **Decided:** 2026-11-14, by platform engineering.
-- **Rule:** each child span goes out once its end time exists. The root goes out exactly once, at the PR's first terminal state, and is never re-exported. After a reopen, the reopen, later closes and merges, and later root events become child spans, and the collector pipeline doesn't tail-sample.
+- **Rule:** each child span goes out once its end time exists. The root goes out exactly once, at the PR's first terminal state, even after a reopen. After a reopen, the reopen, later closes and merges, and later root events become child spans, and the collector pipeline doesn't tail-sample.
 - **Undo:** delay every span until the terminal state, which hides open PRs from the backend.
 - **Record:** this design's pull request.
 
@@ -66,7 +66,7 @@ The operator decided D1 and D2 on 2026-11-14, and each item names its record. Pl
 ### D8. The service reads GitHub through REST with conditional requests and one shared budget
 
 - **Decided:** 2026-11-14, by platform engineering.
-- **Rule:** the service calls the REST API with `If-None-Match`, one request at a time and at least 250 milliseconds apart. One shared token bucket, refilled at 2,500 requests an hour with at most 60 tokens held, serves webhook-triggered reconciles first, then incremental runs, the nightly sweep, and the backfill.
+- **Rule:** the service calls the REST API with `If-None-Match` and sends one request at a time, at least 250 milliseconds after the previous one. One shared token bucket, refilled at 2,500 requests an hour with at most 60 tokens held, serves webhook-triggered reconciles first, then incremental runs, the nightly sweep, and the backfill.
 - **Undo:** move the per-PR fetch to one GraphQL query, as appendix B describes.
 - **Record:** this design's pull request.
 
@@ -94,7 +94,7 @@ The operator decided D1 and D2 on 2026-11-14, and each item names its record. Pl
 ### D12. Telemetry contains no PR titles, bodies, comment text, or diffs
 
 - **Decided:** 2026-11-14, by platform engineering.
-- **Rule:** spans record the repository, the base branch, the PR number, logins, team slugs, states, and times, for private repositories too. Raw webhook bodies, which hold titles and review text, stay in the store only until the worker extracts the repository and PR, or 7 days in the dead-letter bucket. Backend access and retention for this telemetry are an operator input, to be confirmed by the threat-model follow-up.
+- **Rule:** spans record repository and base branch names, PR numbers, logins, team slugs, states, and times, for private repositories too. Raw webhook bodies, which contain titles and review text, stay in the store only until the worker extracts the repository and PR, or 7 days in the dead-letter bucket. The operator sets backend access and retention for this telemetry, and the threat-model follow-up must confirm them.
 - **Undo:** add a title attribute in a later release.
 - **Record:** this design's pull request.
 

@@ -35,7 +35,7 @@ The OTel Collector has a contributed GitHub receiver that scrapes repository met
 
 ## The redelivery API as a healer
 
-The service could list failed deliveries and redeliver them with an App-level JSON Web Token (JWT). Reconciliation heals only what the REST API shows, so it can't recover a fact that exists only in a webhook, such as a review thread's resolution. This design records no webhook-only fact, which makes reconciliation a complete healer here, and redelivery would add only lower latency for the cost of more code and a second credential use.
+The service could list failed deliveries and redeliver them with an App-level JSON Web Token (JWT). Reconciliation recovers only what the REST API shows. A fact that exists only in a webhook, such as a review thread's resolution, can't come back through reconciliation. This design doesn't record such a fact. Reconciliation restores everything the design does record, which is all it needs. Redelivery would add only lower latency, at the cost of more code and a second credential use.
 
 ## Author login as a metric attribute
 
@@ -43,8 +43,8 @@ Per-author histograms would show who waits longest. Public repositories accept P
 
 ## Re-exporting the root after a reopen
 
-The root could go out again with the same IDs and a later end time each time a reopened PR changes state. That relies on how each backend treats two spans with one ID, which this draft hasn't checked, and the stateless option above notes that backends don't reliably drop a repeat. Child spans for the reopen and the later close or merge carry the same facts without a duplicate root.
+The root could go out again with the same IDs and a later end time each time a reopened PR changes state. That relies on how each backend treats two spans with one ID, which this draft hasn't checked, and the stateless option earlier in this appendix notes that backends don't reliably drop a repeat. Child spans for the reopen and the later close or merge record the same facts without a duplicate root.
 
 ## Webhook payloads as a telemetry source
 
-The worker could read facts such as review thread resolution straight from webhook bodies. A missed delivery would then lose those facts for good, because reconciliation can't fetch them, and a payload carries no GitHub timestamp for some changes. Taking content only from REST keeps one source of truth and lets the queue drop each body once the PR is marked.
+The worker could read facts such as review thread resolution straight from webhook bodies. A missed delivery would then lose those facts permanently, because reconciliation can't fetch them. Some changes also have no GitHub timestamp in the payload. Taking content only from REST keeps one source of truth and lets the queue drop each body once the worker marks the PR.

@@ -14,7 +14,7 @@ Back to [the design](README.md). This appendix lists the planned App's events an
 
 GitHub's permission tables put the list endpoints for pull requests (PRs), commits, reviews, and requested reviewers under Pull requests read. They list the issue timeline endpoint under either Issues read or Pull requests read, and that means the timeline works without the Issues permission. When the service requests an installation token, it asks for exactly these two permissions.
 
-Pull requests read reaches more than the service uses: PR titles, bodies, and review text, and PR diffs through the PR and PR files endpoints (existing, appendix A). The service doesn't call the diff or file endpoints, and README section "Data the service keeps and sends" states what it persists.
+Besides what the service uses, Pull requests read opens PR titles, bodies, and review text, and it opens PR diffs through the PR and PR files endpoints (existing, appendix A), although the service never calls the diff or file endpoints. For what the service persists, see README section "Data the service keeps and sends."
 
 ## Webhook events
 
@@ -27,7 +27,7 @@ The worker ignores every other action of these events, such as `edited` or `labe
 
 ### Deliberately excluded
 
-- **`pull_request_review_thread`:** REST doesn't expose a thread's resolved state, so a missed delivery couldn't be healed, and the design takes no telemetry content from webhook bodies. Its payloads would also bring review comment text and diff hunks into the queue.
+- **`pull_request_review_thread`:** REST doesn't expose a thread's resolved state, which means reconciliation couldn't heal a missed delivery. The design takes telemetry content only from REST, never from webhook bodies. Its payloads would bring review comment text and diff hunks into the queue as well.
 - **`pull_request_review_comment`:** each review comment belongs to a review, and the `pull_request_review` event already reports the submission.
 - **`issue_comment`:** conversation comments don't affect the timing metrics, and the event would need the Issues permission.
 - **`check_run` and `check_suite`:** continuous integration (CI) belongs to the organization collector. These events also need Checks read and arrive once per job.
@@ -77,13 +77,13 @@ GitHub gives an App installation at least 5,000 requests an hour, and installati
 
 List endpoints return at most 100 items a page. The estimates assume each per-PR fetch of reviews, commits, and timeline averages 4 requests, not 3, because about a third of the lists need a second page, and a PR with more than 100 commits or timeline events needs more (assumption, unverified until the first run measures it).
 
-An incremental run usually needs one PR list page per repository, because the walk stops at the watermark. The estimate adds 4 pages for busy repositories.
+An incremental run needs only one PR list page for most repositories, because the walk stops at the watermark. The estimate adds 4 pages for busy repositories.
 
 ### Steady state
 
 | Work | Requests | Per hour, worst case with no `304` |
 | --- | --- | --- |
-| Incremental run: one repository list, one PR list page per repository, and 4 extra pages | 45 | 180 |
+| Incremental run: a repository list plus one PR list page per repository, with 4 extra pages | 45 | 180 |
 | PRs changed, about 30 an hour: reviews, commits, and timeline with pagination | 4 each | 120 |
 | Webhook reconciles, about 30 PRs an hour: the PR, then reviews, commits, and timeline | 5 each | 150 |
 | Total steady state | | 450, about 9% of 5,000 |
@@ -92,7 +92,7 @@ The nightly sweep adds about 400 requests for 100 open PRs. Most return `304`, a
 
 ### One shared budget
 
-Every request goes through one token bucket that the backfill, the nightly sweep, the incremental runs, and webhook-triggered reconciles all share. It refills continuously at one token every 1.44 seconds, which is 2,500 an hour, half of the 5,000 floor, and holds at most 60 tokens, so any rolling hour sees at most 2,560 requests. Every request takes one token, `304` answers included.
+Every request goes through one token bucket that the backfill, the nightly sweep, the incremental runs, and webhook-triggered reconciles all share. It refills continuously at one token every 1.44 seconds, which is 2,500 an hour, half of the 5,000 floor, and holds at most 60 tokens. That caps any rolling hour at 2,560 requests. A `304` answer takes a token like any other request.
 
 Each new token goes to the highest-priority waiter: webhook-triggered reconciles, then incremental runs, then the nightly sweep, then the backfill. The backfill always has work waiting, so it takes only the tokens nobody else wants, and webhook work never waits behind a spent hour.
 
@@ -100,9 +100,9 @@ That leaves the backfill about 2,500 − 450 = 2,050 requests in an ordinary hou
 
 ### Pacing for the secondary limit
 
-The secondary limit is 900 points a minute for REST, and most `GET` requests cost 1 point. Sending one request at a time doesn't bound points per minute on its own, so the limiter also spaces requests at least 250 milliseconds apart, even while spending a full bucket. That allows at most 240 requests, and so at most 240 points, a minute.
+REST has a secondary limit of 900 points a minute, and most `GET` requests cost 1 point. Serial requests alone don't bound points per minute. The limiter also spaces requests at least 250 milliseconds apart, even while it spends a full bucket, which allows at most 240 requests, and so at most 240 points, in any minute.
 
-Whether a `304` costs a secondary-limit point is unverified, so the pacer spaces it like any other request.
+Because this draft hasn't checked whether a `304` costs a secondary-limit point (unverified), the pacer spaces it like any other request.
 
 ### Backfill
 

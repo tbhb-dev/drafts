@@ -11,11 +11,11 @@ Draft of 2026-11-14. It proposes `github-metrics`, a service that tbhb-dev doesn
 
 ## Summary
 
-Today tbhb-dev can't see how long a pull request (PR) waits for review or merge. It also has no view of one PR's lifecycle as a timeline.
+Today tbhb-dev can't see how long a pull request (PR) waits for review or merge, and it has no view of one PR's lifecycle as a timeline.
 
 This draft proposes `github-metrics`, a small containerized Go service. A new read-only GitHub App feeds it webhooks, and a scheduled reconciliation run heals what the webhooks miss. It publishes OpenTelemetry (OTel) data only: one trace per PR lifecycle and three timing histograms per repository, sent to the host's local collector.
 
-For the operator, it means one new GitHub App with two read permissions and one public webhook path behind a Cloudflare Tunnel. The operator approved both on 2026-11-14, as D1 and D2 in [decisions.md](decisions.md) record. The first deploy still waits on a threat-model follow-up design, plan step 6.
+For the operator, it means one new GitHub App with two read permissions and one public webhook path behind a Cloudflare Tunnel. The operator approved both on 2026-11-14. D1 and D2 in [decisions.md](decisions.md) record those approvals, and the first deploy still waits on a threat-model follow-up design, plan step 6.
 
 ## Proposal
 
@@ -35,13 +35,13 @@ This design has no diagrams, because this repository has no D2 rendering rules t
 
 ### One path for webhooks and reconciliation
 
-1. A webhook arrives. The receiver checks the method, the media type, and the size, then verifies `X-Hub-Signature-256` before it parses any JSON.
-2. Only after the signature passes, one `bbolt` transaction checks the dedupe table, records the delivery, and appends the raw body to the queue. The receiver syncs the file before it answers `202 Accepted`, so a crash after that answer loses nothing.
-3. Next, the worker reads the repository and PR number from the signed body, marks the PR for reconciliation, and deletes the raw body in the same transaction. A body that lists `repositories_added` schedules a backfill of those repositories instead.
+1. A webhook arrives. Before it parses any JSON, the receiver checks the method, the media type, and the size, and then verifies `X-Hub-Signature-256`.
+2. Only after the signature passes, one `bbolt` transaction checks the dedupe table. The same transaction records the delivery there and appends the raw body to the queue. The receiver syncs the file before it answers `202 Accepted`. A crash after that answer loses nothing.
+3. Next, the worker reads the repository and PR number from the signed body and marks the PR for reconciliation. It deletes the raw body in the same transaction. A body that lists `repositories_added` schedules a backfill of those repositories instead.
 4. To reconcile the PR, the worker fetches its current state with conditional requests: the PR itself, its reviews, commits, and timeline, which supplies review request times. It compares that state with the record of what it already exported.
-5. Finally, the worker exports the spans that just became complete and writes their IDs to the store after the export succeeds, never before. Metric milestones follow the commit-then-record rule in appendix C, and the periodic reader exports them later.
+5. Finally, the worker exports the spans that just became complete. Only after the export succeeds does it write their IDs to the store. Metric milestones follow the commit-then-record rule in appendix C, and the periodic reader exports them later.
 
-A delivery only triggers a reconcile, and telemetry content always comes from REST responses, never from a webhook body. The scheduled reconciler feeds PRs into step 4 as well, so both sources run the same code. A duplicate, out-of-order, replayed, or missed delivery all end at the same reconcile of the PR's current state on GitHub.
+A delivery only triggers a reconcile. Telemetry content always comes from REST responses, never from a webhook body, and because the scheduled reconciler feeds PRs into step 4 as well, both sources run the same code. A duplicate, out-of-order, replayed, or missed delivery all end at the same reconcile of the PR's current state on GitHub.
 
 ### Trace model
 
@@ -49,17 +49,17 @@ A delivery only triggers a reconcile, and telemetry content always comes from RE
 - **Collisions.** For a 128-bit trace ID, the chance of any collision among a billion PRs is near 2^-69. Within one trace of a thousand spans, 64-bit span IDs collide with odds near 2^-45, and the service accepts both risks without checking. OTel treats an all-zero ID as invalid, and in that case the derivation hashes its own output again.
 - **Timestamps.** Each span takes its start and end times from GitHub's own timestamps, never from the time the service saw the event.
 - **Tree.** The root span `github.pull_request` runs from creation to the first merge or close. Its children are one span per commit, review request, review, reopen, and close, one `merge` span, and one `event` span per root event after the root's export, and appendix C lists the times and attributes of each.
-- **Events.** Short facts from the REST timeline without their own duration become span events on the root: ready for review, converted to draft, and a force-push to the head branch. Review thread resolution isn't recorded, because REST doesn't expose it, as appendix C explains.
+- **Events.** Short facts from the REST timeline without their own duration become span events on the root: ready for review and converted to draft, plus any force-push to the head branch. Review thread resolution isn't recorded, because REST doesn't expose it, as appendix C explains.
 
 The store lists every exported span ID, and the worker skips any span already in it.
 
 ### Emission timing
 
-A PR can remain open for weeks, and OTel can't export a span before it ends. The service exports each child span once its end time exists on GitHub, with the deterministic root span ID as its parent. It exports the root span exactly once, at the PR's first merge or close, with the root events up to then.
+OTel can't export a span before it ends, and a PR may remain open for weeks. Each child span goes out as soon as its end time appears on GitHub, parented to the deterministic root span ID. Children come first. The root goes out once, at the first merge or close, with the root events up to then.
 
-Until then, tracing backends show an open PR's children under a missing root span. This service's collector pipeline must not tail-sample, because tail sampling waits only seconds for a trace to complete. Trace retention in the backend must outlast the longest PR, or a PR's early spans age out before its root arrives.
+Until then, tracing backends show an open PR's children under a missing root span. Because tail sampling waits only seconds for a trace to complete, this service's collector pipeline must not tail-sample. Trace retention in the backend must also outlast the longest PR, or a PR's early spans age out before its root arrives.
 
-A reopened PR keeps its trace and its one root, which the service never exports again. The reopen, any later close or merge, and any root event after the root's export become child spans of that root. As a result, the root's end time and state describe the first terminal state, and the latest state is on the last `merge` or `close` child.
+After a reopen, the PR keeps its trace and its one root, which the service never exports again. Its reopen, any later close or merge, and any root event after the root's export become child spans of that root. That leaves the root's end time and state describing the first terminal state, while the last `merge` or `close` child shows the latest state.
 
 ### Metrics
 
@@ -81,11 +81,11 @@ Backfilled history gets traces and no metrics.
 
 ### Reconciliation
 
-Every 15 minutes, the reconciler lists each repository's PRs by update time, newest first, with `If-None-Match`. GitHub doesn't count a `304 Not Modified` response against the primary rate limit. For each changed PR, the reconciler walks back to the repository's watermark and reconciles the PR, and once a night it also reconciles every open PR.
+Every 15 minutes, the reconciler lists each repository's PRs by update time, newest first, with `If-None-Match`. GitHub doesn't count a `304 Not Modified` response against the primary rate limit. For each changed PR, the reconciler walks back to the repository's watermark and reconciles the PR. Once a night it also reconciles every open PR.
 
 An installation of the App gets at least 5,000 requests an hour. One shared token bucket, refilled at 2,500 requests an hour, serves webhook-triggered reconciles, incremental runs, the nightly sweep, and the backfill, in that priority order. Steady state uses about 450 requests an hour in the worst case, pagination included, about 9% of the 5,000 floor.
 
-The service uses REST only, as requested, and appendix B compares it with GraphQL. Appendix D gives the full budget, the request pacing, the backfill that runs on first install, and the handling of installation tokens and secondary rate limits.
+The service uses REST only, as requested. Appendix B compares it with GraphQL, and appendix D gives the full budget, the request pacing, the backfill that runs on first install, and the handling of installation tokens and secondary rate limits.
 
 ### Export to the collector
 
@@ -93,7 +93,7 @@ The service sends OTLP over HTTP with protobuf to the address in `OTEL_EXPORTER_
 
 Traces skip the SDK's batch processor: the worker collects the finished spans of one reconcile and exports them in one synchronous call, and it writes a span's ID to the store only after the collector accepts it. If the collector is down, the failed export leaves the store unchanged. The PR then waits in the queue for the next pass.
 
-Metrics use a periodic reader every 60 seconds with cumulative aggregation, so the SDK keeps running totals in memory, not a queue. While the process lives, a collector outage loses nothing, because the next accepted export carries the totals. A crash or restart loses every observation since the last accepted export, which during a collector outage spans the whole outage, and backends read the restart as a counter reset.
+Metrics use a periodic reader every 60 seconds with cumulative aggregation, which keeps running totals in memory instead of a queue. While the process lives, a collector outage loses nothing, because the next accepted export contains the totals. A crash or restart loses every observation since the last accepted export, which during a collector outage spans the whole outage, and backends read the restart as a counter reset.
 
 Resource attributes are `service.name=github-metrics`, `service.version`, and `deployment.environment.name=production`. Each span also has `vcs.provider.name=github` and `vcs.owner.name=tbhb-dev`.
 
@@ -109,7 +109,7 @@ Resource attributes are `service.name=github-metrics`, `service.version`, and `d
 ### Webhook security
 
 - The receiver accepts only `POST` with `Content-Type: application/json` on `/webhook`, and answers `405` or `415` to anything else.
-- It caps the body at 5 MB to bound memory for unauthenticated requests. GitHub caps payloads at 25 MB, and how the receiver treats a valid delivery above 5 MB is a gate of the follow-up in plan step 6.
+- It caps the body at 5 MB to bound memory for unauthenticated requests. GitHub caps payloads at 25 MB, and how the receiver treats a valid delivery larger than 5 MB is a gate of the follow-up in plan step 6.
 - It computes a Hash-based Message Authentication Code (HMAC) with SHA-256 over the raw body. It compares the result with `X-Hub-Signature-256` in constant time before parsing, and during a secret rotation it accepts the current or the previous secret.
 - Each log line records the delivery ID, the event name, and the result, never a body, a header value, a token, or a secret.
 - The App private key and the webhook secret come from 1Password through the deploy host's secret manager, mounted as read-only files. The image and the environment never contain them.
@@ -127,18 +127,20 @@ The tunnel routes only the `/webhook` path for the hostname, and the edge answer
 
 ### Data the service keeps and sends
 
-The App's Pull requests read permission reaches more than this service uses. A PR payload carries its title and body, a review payload carries the review's text, and the REST API under the same permission returns PR diffs and the PR files endpoint, so the App can read any code a PR changes (existing, appendix A). The App doesn't request the Contents, Issues, or Checks permissions.
+The App's Pull requests read permission reaches more than this service uses, because a PR payload contains its title and body and a review payload contains the review's text. Under the same permission, the REST API also returns PR diffs and the PR files endpoint, which lets the App read any code a PR changes (existing, appendix A), although it doesn't request the Contents, Issues, or Checks permissions.
 
 | Data | Where | Kept for |
 | --- | --- | --- |
-| Raw webhook bodies, with titles and review text | The queue in the store | Until the worker extracts the repository and PR, normally seconds, then logically deleted |
+| Raw webhook bodies including titles and review text | The queue in the store | Until the worker extracts the repository and PR, normally seconds, then logically deleted |
 | Raw bodies that fail to parse | The dead-letter bucket | 7 days, then deleted |
 | Delivery IDs, body hashes, and times | The dedupe table | 7 days, at most 200,000 entries |
 | Span IDs, milestones, watermarks, and `ETag` values | The store | The life of the store |
 
-Deletion from the store is logical: `bbolt` may not zero freed pages, so a deleted body can stay in the file, and in any copy of it, until its pages are reused (unverified). The store file is proposed at mode `0600`, owned by the image's non-root user, on a volume no other service mounts. Final modes, ownership, and whether backups exist at all are gates of the follow-up in plan step 6, and any backup would hold whatever bodies sit in the queue or dead letters at that moment.
+Deletion from the store is logical. Because `bbolt` may not zero freed pages, a deleted body can stay in the file and in any copy of it until `bbolt` reuses its pages (unverified). This draft proposes mode `0600` for the store file, owned by the image's non-root user, on a volume that only this service mounts. Final modes, ownership, and whether backups exist at all are gates of the follow-up in plan step 6. Any backup would contain whatever bodies are in the queue or dead letters at that moment.
 
-Telemetry carries no titles, bodies, comment text, or diffs. It does carry, for private repositories too, repository names, base branch names, PR numbers, logins, and team slugs, and the collector forwards them to the existing backends. Who can read those backends and how long they keep this data is an input the operator owns, to be confirmed by the threat-model follow-up.
+Telemetry leaves out titles, bodies, comment text, and diffs.
+
+It does include, for private repositories too, repository names, base branch names, PR numbers, logins, and team slugs, and the collector forwards them to the existing backends. The operator sets who can read those backends and how long they keep this data, and the threat-model follow-up must confirm both.
 
 ### Relationship to the organization collector
 
@@ -150,7 +152,7 @@ Under the proposed boundary, `github-metrics` covers the PR lifecycle: PRs, revi
 
 - **Image.** A distroless static non-root base pinned by digest, with one Go binary built with cgo off.
 - **Runtime.** Run on the production container host, with a non-root user in the image, a read-only root filesystem, one writable volume at `/var/lib/github-metrics`, and no added capabilities.
-- **Hardening.** The container doesn't use the host network, and the deploy references the image by digest. The service gets no host account of its own and shares the production container host. These are design choices, using only hardening that costs nothing.
+- **Hardening.** The container stays off the host network, and the deploy references the image by digest. Without a host account of its own, the service shares the production container host. These are design choices, and they use only zero-cost hardening.
 - **Delivery.** The service repository publishes the digest-pinned image and a Compose file. The host operator deploys it, and the service repository has no deploy workflow.
 - **Config.** Environment variables set the App ID, the installation ID, the listen addresses, the schedule, and the OTLP endpoint, plus file paths for the two secrets.
 - **Health.** `/healthz` reports liveness, and `/readyz` reports an open store and one finished reconciliation.
@@ -166,17 +168,17 @@ Later versions may add log export and other event types, such as issues, discuss
 | The backend rejects or hides spans dated weeks in the past | Old PR traces don't appear in search | The first export spike sends a backdated trace and searches for it | Unverified |
 | Backend trace retention is shorter than a PR's life | Early child spans age out before the root arrives | Set retention past the longest expected PR, and report orphans | Unverified |
 | The OTel Go SDK can't set chosen span IDs | The trace model needs another export path | A custom ID generator in the first spike, with OTLP data built directly as the fallback | Unverified |
-| `ETag` values change when the installation token rotates | Fewer free `304` answers | The worst-case budget already assumes no `304` | New, budget in appendix D |
+| `ETag` values change when the installation token rotates | Fewer free `304` answers | The worst-case budget already assumes every request returns a full response | New, budget in appendix D |
 | The organization collector already emits PR metrics | Duplicate series and doubled API use | Plan step 4 confirms the boundary with that design's owner before step 5 starts | Unverified |
 | An outage longer than 24 hours | Milestones from the outage get traces but no metric observations | Accepted, since the traces still record each duration | New |
-| A crash between a span export and its store write | That reconcile's spans export twice | Accepted, since the window is one write long | New |
-| A crash during a collector outage | Every metric observation since the last accepted export is lost | Accepted, since milestones are committed first and never double | New |
-| The store is lost, or an older snapshot is restored | Every span re-exports; a restore also double-counts recent milestones | Store creation time gates metrics, and restores are forbidden | New, appendix C |
+| A crash between a span export and its store write | That reconcile run's spans export twice | Accepted, since the window is one write long | New |
+| A crash during a collector outage | The service loses every metric observation since the last accepted export | Accepted, since the worker commits milestones first and they never double | New |
+| The service loses its store, or someone restores an older snapshot | Every span re-exports, and a restore also double-counts recent milestones | Store creation time gates metrics, and restores are forbidden | New, appendix C |
 | Unsigned traffic floods the public webhook path | CPU spent on rejected requests | Size cap before reading, HMAC before parsing, and an optional edge rate limit | New |
-| Receiver gaps: rejection of missing or malformed signatures and headers, read, write, and header timeouts, connection and concurrency limits, unknown event names, and oversized valid deliveries | Resource exhaustion or silent drops | Gates of the threat-model follow-up, plan step 6 | New, deferred to step 6 |
-| Tunnel acceptance tests don't cover the security gates | A route wider than `POST /webhook` goes unnoticed | Gates of the threat-model follow-up, plan step 6 | New, deferred to step 6 |
+| Receiver gaps: rejection of missing or malformed signatures and headers, read, write, and header timeouts, connection and concurrency limits, unknown event names, and oversize valid deliveries | Resource exhaustion or silent drops | Gates of the threat-model follow-up, plan step 6 | New, deferred to step 6 |
+| Tunnel acceptance tests don't cover the security gates | A route wider than `POST /webhook` passes the tests | Gates of the threat-model follow-up, plan step 6 | New, deferred to step 6 |
 | Secret files and the store have loose modes or ownership, or the store is corrupt or backed up carelessly | A local reader gets the key or queued bodies, or the service loses its record | Gates of the threat-model follow-up, plan step 6 | New, deferred to step 6 |
-| The previous webhook secret is never retired, or the App key never rotates | An old credential keeps working | Gates of the threat-model follow-up, plan step 6 | New, deferred to step 6 |
+| The operator never retires the previous webhook secret or never rotates the App key | An old credential keeps working | Gates of the threat-model follow-up, plan step 6 | New, deferred to step 6 |
 | Backend access and retention for private-repository names and logins | Wider exposure than the operator intends | The operator confirms it in the threat-model follow-up | Unverified |
 
 ## Plan
