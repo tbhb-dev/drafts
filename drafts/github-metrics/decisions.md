@@ -15,17 +15,17 @@ The operator decided D1 and D2 on 2026-11-14, and each item states its record. P
 
 ### D1. May tbhb-dev create the read-only GitHub App and install it on all repositories?
 
-- **Decided:** 2026-11-14, by the operator: yes, on the wording then proposed. That wording listed three pull request (PR) events and said the App couldn't read source code.
-- **Rule:** the App has exactly two permissions: read access to metadata and read access to pull requests. It reads PR, review, and commit data from every repository, private ones included, and its private key is a new credential.
-- **Changed afterwards by platform engineering:** the App now subscribes to two PR events instead of three, because D11 drops `pull_request_review_thread`. A review also corrected the description of what the App can read. Pull requests read gives access to PR titles, bodies, review text, and PR diffs through the PR and PR files endpoints, which lets the App read any code a PR changes, although it doesn't request the Contents, Issues, or Checks permissions.
-- **Undo:** uninstall or delete the App, which revokes every token at once.
+- **Decided:** 2026-11-14, by the operator: yes. A later answer the same day widened the permissions to every read-only permission GitHub offers, for later telemetry. It never includes write.
+- **Rule:** the App has every read-only permission for repositories and the organization, and no write permission. It can read source code, issues, checks, and PR data from every repository, private ones included, and its private key is a new credential. The service requests installation tokens narrowed to metadata and pull requests.
+- **Changed afterwards by platform engineering:** the App subscribes to two PR events instead of three, because D11 drops `pull_request_review_thread`.
+- **Undo:** uninstall or delete the App, which revokes every token at once. To narrow it, edit the App's permissions, and every installation must accept the change.
 - **Record:** the operator's answer in chat, 2026-11-14.
 
-### D2. May the webhook path face the public internet through a Cloudflare Tunnel at `github-metrics.tbhb.dev`?
+### D2. May the webhook path face the public internet through a Cloudflare Tunnel at `github-metrics.tbhb.dev`, and may the image be public?
 
-- **Decided:** 2026-11-14, by the operator: yes.
+- **Decided:** 2026-11-14, by the operator: yes. A later answer the same day also allows publishing the container image to the public GitHub Container Registry.
 - **Rule:** the tunnel routes only `POST /webhook`, and the edge answers `404` to every other path. The tunnel makes outbound connections only, and the service checks each request's signature before it parses the body.
-- **Undo:** remove the tunnel route and the DNS record.
+- **Undo:** remove the tunnel route and the DNS record, and unpublish or delete the image package.
 - **Record:** the operator's answer in chat, 2026-11-14.
 
 ### D3. Trace and span IDs derive from the PR's GraphQL node ID
@@ -87,8 +87,8 @@ The operator decided D1 and D2 on 2026-11-14, and each item states its record. P
 ### D11. Checks, issue comments, pushes, and review threads stay out of the first release
 
 - **Decided:** 2026-11-14, by platform engineering.
-- **Rule:** the App doesn't request the Checks, Issues, or Contents permissions. It doesn't subscribe to `check_run`, `check_suite`, `issue_comment`, or `push`, nor to `pull_request_review_comment`, which a submitted review already signals, nor to `pull_request_review_thread`, whose resolution REST can't confirm.
-- **Undo:** add the permission and the event, which every installation must accept again.
+- **Rule:** the App has read access to Checks, Issues, and Contents but the service doesn't call them. It doesn't subscribe to `check_run`, `check_suite`, `issue_comment`, or `push`, nor to `pull_request_review_comment`, which a submitted review already signals, nor to `pull_request_review_thread`, whose resolution REST can't confirm.
+- **Undo:** subscribe to the event, and the permission is already in place.
 - **Record:** this design's pull request.
 
 ### D12. Telemetry contains no PR titles, bodies, comment text, or diffs

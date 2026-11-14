@@ -15,13 +15,13 @@ Today tbhb-dev can't see how long a pull request (PR) waits for review or merge,
 
 This draft proposes `github-metrics`, a small containerized Go service. A new read-only GitHub App feeds it webhooks, and a scheduled reconciliation run heals what the webhooks miss. It publishes OpenTelemetry (OTel) data only: one trace per PR lifecycle and three timing histograms per repository, sent to the host's local collector.
 
-For the operator, it means one new GitHub App with two read permissions and one public webhook path behind a Cloudflare Tunnel. The operator approved both on 2026-11-14. D1 and D2 in [decisions.md](decisions.md) record those approvals, and the first deploy still waits on a threat-model follow-up design, plan step 6.
+For the operator, it means one new GitHub App with broad read-only permissions, one public webhook path behind a Cloudflare Tunnel, and a container image published to the public GitHub Container Registry. The operator approved all three, and D1 and D2 record the answers. The first deploy still waits on a threat-model follow-up design, plan step 6.
 
 ## Proposal
 
 Platform engineering runs every component that follows.
 
-- **The GitHub App.** It belongs to the tbhb-dev organization and installs on all repositories. Its permissions are read access to pull requests and to metadata, and it subscribes to two PR events.
+- **The GitHub App.** It belongs to the tbhb-dev organization and installs on all repositories. It has every read-only permission GitHub offers for repositories and the organization, never write, and it subscribes to two PR events.
 - **The service.** One container runs one static Go binary with three loops. A webhook receiver takes deliveries, a worker turns PR state into telemetry, and a reconciler polls the GitHub REST API on a schedule.
 - **The state store.** A `bbolt` file on a small mounted volume keeps the delivery queue, the delivery dedupe table, the IDs of exported spans, the recorded metric milestones, the per-repository watermarks, and the entity tags (`ETag` values) for conditional requests. Everything else in the container is read-only.
 - **The tunnel.** A Cloudflare Tunnel connector on the same host routes only `POST https://github-metrics.tbhb.dev/webhook` to the service. It makes outbound connections only, and the host doesn't forward any port.
@@ -127,7 +127,7 @@ The tunnel routes only the `/webhook` path for the hostname, and the edge answer
 
 ### Data the service keeps and sends
 
-The App's Pull requests read permission reaches more than this service uses, because a PR payload contains its title and body and a review payload contains the review's text. Under the same permission, the REST API also returns PR diffs and the PR files endpoint, which lets the App read any code a PR changes (existing, appendix A), although it doesn't request the Contents, Issues, or Checks permissions.
+The App's read access is broad, so it can read source code, issues, and checks as well as PRs. A PR payload includes its title and body, and a review payload includes the review's text (existing, appendix A). The service itself calls only the PR endpoints it needs, and the installation token narrows to Metadata and Pull requests.
 
 | Data | Where | Kept for |
 | --- | --- | --- |
@@ -153,7 +153,7 @@ Under the proposed boundary, `github-metrics` covers the PR lifecycle: PRs, revi
 - **Image.** A distroless static non-root base pinned by digest, with one Go binary built with cgo off.
 - **Runtime.** Run on the production container host, with a non-root user in the image, a read-only root filesystem, one writable volume at `/var/lib/github-metrics`, and no added capabilities.
 - **Hardening.** The container stays off the host network, and the deploy references the image by digest. Without a host account of its own, the service shares the production container host. These are design choices, and they use only zero-cost hardening.
-- **Delivery.** The service repository publishes the digest-pinned image and a Compose file. The host operator deploys it, and the service repository has no deploy workflow.
+- **Delivery.** The service repository publishes the digest-pinned image to the public GitHub Container Registry, with a Compose file. The host operator deploys it, and the service repository has no deploy workflow.
 - **Config.** Environment variables set the App ID, the installation ID, the listen addresses, the schedule, and the OTLP endpoint, plus file paths for the two secrets.
 - **Health.** `/healthz` reports liveness, and `/readyz` reports an open store and one finished reconciliation.
 - **Shutdown.** On `SIGTERM`, within 20 seconds, the receiver stops accepting requests and the worker finishes its current PR. Then the meter provider flushes and the store closes.

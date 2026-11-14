@@ -11,10 +11,11 @@ Back to [the design](README.md). This appendix lists the planned App's events an
 | --- | --- | --- |
 | Metadata | Read | GitHub requires it of every App, and the reconciler needs repository metadata |
 | Pull requests | Read | It covers the two subscribed events and every REST call the reconciler makes |
+| Every other repository and organization permission that offers read | Read | The operator wants broad read access for later telemetry, and no permission grants write |
 
-GitHub's permission tables put the list endpoints for pull requests (PRs), commits, reviews, and requested reviewers under Pull requests read. They list the issue timeline endpoint under either Issues read or Pull requests read, and that means the timeline works without the Issues permission. When the service requests an installation token, it asks for exactly these two permissions.
+GitHub's permission tables put the list endpoints for pull requests (PRs), commits, reviews, and requested reviewers under Pull requests read. They list the issue timeline endpoint under either Issues read or Pull requests read, and that means the timeline works without the Issues permission. Today only the first two rows matter to the service, so each installation token request narrows to Metadata and Pull requests. A later release may use the rest.
 
-Besides what the service uses, Pull requests read opens PR titles, bodies, and review text, and it opens PR diffs through the PR and PR files endpoints (existing, appendix A), although the service never calls the diff or file endpoints. For what the service persists, see README section "Data the service keeps and sends."
+Read access is broad here, and that includes source code through Contents read and PR diffs through the PR and PR files endpoints (existing, appendix A). The service never calls those endpoints. For what the service persists, see README section "Data the service keeps and sends."
 
 ## Webhook events
 
@@ -29,20 +30,65 @@ The worker ignores every other action of these events, such as `edited` or `labe
 
 - **`pull_request_review_thread`:** REST doesn't expose a thread's resolved state, which means reconciliation couldn't heal a missed delivery. The design takes telemetry content only from REST, never from webhook bodies. Its payloads would bring review comment text and diff hunks into the queue as well.
 - **`pull_request_review_comment`:** each review comment belongs to a review, and the `pull_request_review` event already reports the submission.
-- **`issue_comment`:** conversation comments don't affect the timing metrics, and the event would need the Issues permission.
+- **`issue_comment`:** conversation comments don't affect the timing metrics, and the service has no use for it.
 - **`check_run` and `check_suite`:** continuous integration (CI) belongs to the organization collector. These events also need Checks read and arrive once per job.
-- **`push`:** it needs Contents read, which grants access to a repository's full contents. The PR commits endpoint gives the same commits under Pull requests read.
+- **`push`:** the App can read Contents, but the PR commits endpoint already gives the same commits.
 - **Issues, Actions, and workflow events:** later releases may add them.
 
 ### Manifest keys
 
-The App manifest sets these two keys, with `public` set to `false` and the webhook URL `https://github-metrics.tbhb.dev/webhook` under `hook_attributes`.
+The App manifest sets these two keys, and `default_permissions` lists every read-only permission for repositories and the organization, with `public` set to `false` and the webhook URL `https://github-metrics.tbhb.dev/webhook` under `hook_attributes`.
 
 ```json
 {
   "default_permissions": {
+    "actions": "read",
+    "administration": "read",
+    "artifact_metadata": "read",
+    "attestations": "read",
+    "checks": "read",
+    "code_quality": "read",
+    "codespaces": "read",
+    "contents": "read",
+    "dependabot_secrets": "read",
+    "deployments": "read",
+    "discussions": "read",
+    "environments": "read",
+    "issues": "read",
+    "merge_queues": "read",
     "metadata": "read",
-    "pull_requests": "read"
+    "packages": "read",
+    "pages": "read",
+    "pull_requests": "read",
+    "repository_custom_properties": "read",
+    "repository_hooks": "read",
+    "repository_projects": "read",
+    "secret_scanning_alerts": "read",
+    "secrets": "read",
+    "security_events": "read",
+    "statuses": "read",
+    "vulnerability_alerts": "read",
+    "custom_properties_for_organizations": "read",
+    "members": "read",
+    "organization_administration": "read",
+    "organization_custom_roles": "read",
+    "organization_custom_org_roles": "read",
+    "organization_custom_properties": "read",
+    "organization_copilot_seat_management": "read",
+    "organization_copilot_agent_settings": "read",
+    "organization_copilot_requests": "read",
+    "organization_external_properties_for_repos": "read",
+    "organization_announcement_banners": "read",
+    "organization_events": "read",
+    "organization_hooks": "read",
+    "organization_personal_access_tokens": "read",
+    "organization_personal_access_token_requests": "read",
+    "organization_plan": "read",
+    "organization_projects": "read",
+    "organization_packages": "read",
+    "organization_secrets": "read",
+    "organization_self_hosted_runners": "read",
+    "organization_user_blocking": "read"
   },
   "default_events": [
     "pull_request",
