@@ -52,7 +52,7 @@ Each page below resolved on 2026-11-13. A resolving page proves only that the pa
 | List endpoints return at most 100 items a page | Existing, re-read 2026-11-13 | Pull request endpoints, `per_page` |
 | Timeline event types include `review_requested`, `ready_for_review`, `convert_to_draft`, `head_ref_force_pushed`, and `reopened` | Existing, re-read 2026-11-13 | Issue event types |
 | A timeline `review_requested` event has `id`, `node_id`, and `created_at` | Existing | Issue event types |
-| The REST review comment endpoints expose no thread resolution state, and their comments carry `diff_hunk` | Existing, re-read 2026-11-13: the page has no "resolved" field | Review comment endpoints |
+| The REST review comment endpoints and timeline event types expose no thread resolution state, and review comments carry `diff_hunk` | Existing, re-read 2026-11-13: neither page lists a resolved field or event | Review comment endpoints, Issue event types |
 | GitHub doesn't redeliver failed deliveries automatically | Existing | Handling failed webhook deliveries |
 | Listing and redelivering App webhook deliveries needs a JSON Web Token (JWT) | Existing | GitHub App webhook endpoints |
 | A JWT expires at most 10 minutes ahead, uses RS256, and should set `iat` 60 seconds in the past | Existing | Generating a JWT |
@@ -62,6 +62,7 @@ Each page below resolved on 2026-11-13. A resolving page proves only that the pa
 | The permission keys are `pull_requests` and `metadata` | Existing | GitHub App endpoints, "Create an installation access token for an app." Its `permissions` body uses these names, and the manifest flow in plan step 7 confirms them |
 | `ETag` values remain valid across the hourly token rotation | Unverified | The first live run after plan step 7 measures the `304` rate |
 | A redelivery keeps its original `X-GitHub-Delivery` value | Unverified | The docs read for this draft don't say |
+| `bbolt` doesn't zero freed pages, so logically deleted bodies can remain in the file | Unverified | Plan step 6 covers file modes and backups |
 | About a third of per-PR lists need a second page | Unverified | An assumption for the budget, and the first run measures it |
 
 ## Telemetry libraries and backends

@@ -92,27 +92,27 @@ The nightly sweep adds about 400 requests for 100 open PRs. Most return `304`, a
 
 ### One shared budget
 
-Every request goes through one limiter that the backfill, the nightly sweep, the incremental runs, and webhook-triggered reconciles all share. It allows at most 2,500 requests in each clock hour, half of the 5,000 floor, and counts every request it sends, `304` answers included. When several kinds of work wait, it serves them in this order: webhook-triggered reconciles, incremental runs, the nightly sweep, and the backfill.
+Every request goes through one token bucket that the backfill, the nightly sweep, the incremental runs, and webhook-triggered reconciles all share. It refills continuously at one token every 1.44 seconds, which is 2,500 an hour, half of the 5,000 floor, and holds at most 60 tokens, so any rolling hour sees at most 2,560 requests. Every request takes one token, `304` answers included.
 
-Backfill therefore gets only what the other work leaves. In an ordinary hour that's about 2,500 − 450 = 2,050 requests, and in the nightly sweep's hour about 2,500 − 450 − 400 = 1,650.
+Each new token goes to the highest-priority waiter: webhook-triggered reconciles, then incremental runs, then the nightly sweep, then the backfill. The backfill always has work waiting, so it takes only the tokens nobody else wants, and webhook work never waits behind a spent hour.
 
-When the hour's 2,500 are spent, all work waits for the next hour, webhook-triggered work first. The service also reads `x-ratelimit-remaining` on every response and stops all work until `x-ratelimit-reset` if fewer than 500 remain, which covers any other use of the installation's limit.
+That leaves the backfill about 2,500 − 450 = 2,050 requests in an ordinary hour, and about 2,500 − 450 − 400 = 1,650 in the nightly sweep's hour. The service also reads `x-ratelimit-remaining` on every response and stops all work until `x-ratelimit-reset` if fewer than 500 remain, which covers any other use of the installation's limit.
 
 ### Pacing for the secondary limit
 
-The secondary limit is 900 points a minute for REST, and most `GET` requests cost 1 point. Sending one request at a time doesn't bound points per minute on its own, so the limiter also spaces requests at least 250 milliseconds apart. That allows at most 240 requests, and so at most 240 points, a minute.
+The secondary limit is 900 points a minute for REST, and most `GET` requests cost 1 point. Sending one request at a time doesn't bound points per minute on its own, so the limiter also spaces requests at least 250 milliseconds apart, even while spending a full bucket. That allows at most 240 requests, and so at most 240 points, a minute.
 
 Whether a `304` costs a secondary-limit point is unverified, so the pacer spaces it like any other request.
 
 ### Backfill
 
-With 40 repositories of about 300 PRs each, a backfill reads 12,000 PRs. That's 120 list pages plus about 48,000 per-PR requests at 4 each. At about 2,050 requests an hour, it takes about 24 hours, and the shared limiter keeps total use at or under 2,500 an hour throughout.
+With 40 repositories of about 300 PRs each, a backfill reads 12,000 PRs. That's 120 list pages plus about 48,000 per-PR requests at 4 each. At about 2,050 requests an hour, it takes about 24 hours, and the token bucket keeps total use at or under about 2,560 in any rolling hour throughout.
 
 A backfill writes spans with their original timestamps and records metric milestones as seen, without histogram observations. A PR with more than 250 commits gets only its first 250 commit spans, because the PR commits endpoint returns at most 250.
 
 ### Rate-limit handling
 
-- The limiter sends one request at a time, at least 250 milliseconds apart, within the shared hourly budget.
+- The limiter sends one request at a time, at least 250 milliseconds apart, and only with a token from the shared bucket.
 - It reads `x-ratelimit-remaining` and `x-ratelimit-reset` on every response, and stops all work until the reset when fewer than 500 remain.
 - On a secondary rate limit, the service waits for `retry-after` when present, and otherwise at least one minute, doubling up to 15 minutes.
 - A `401` renews the installation token once, and a second `401` stops the run and logs the failure.

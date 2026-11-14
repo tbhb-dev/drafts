@@ -48,7 +48,7 @@ A delivery only triggers a reconcile, and telemetry content always comes from RE
 - **IDs.** The trace ID is the first 16 bytes of a digest from the Secure Hash Algorithm (SHA), in its SHA-256 form, over `github-metrics/v1/trace/` plus the PR's GraphQL node ID. Each span ID is the first 8 bytes of a SHA-256 digest over `github-metrics/v1/span/`, the node ID, the span kind, and a key unique within the PR, such as a review's node ID or a commit hash. Webhook and reconciliation runs derive the same IDs, and both write to one trace.
 - **Collisions.** For a 128-bit trace ID, the chance of any collision among a billion PRs is near 2^-69. Within one trace of a thousand spans, 64-bit span IDs collide with odds near 2^-45, and the service accepts both risks without checking. OTel treats an all-zero ID as invalid, and in that case the derivation hashes its own output again.
 - **Timestamps.** Each span takes its start and end times from GitHub's own timestamps, never from the time the service saw the event.
-- **Tree.** The root span `github.pull_request` runs from creation to the first merge or close. Its children are one span per commit, review request, review, reopen, and close, plus one `merge` span, and appendix C lists the times and attributes of each.
+- **Tree.** The root span `github.pull_request` runs from creation to the first merge or close. Its children are one span per commit, review request, review, reopen, and close, one `merge` span, and one `event` span per root event after the root's export, and appendix C lists the times and attributes of each.
 - **Events.** Short facts from the REST timeline without their own duration become span events on the root: ready for review, converted to draft, and a force-push to the head branch. Review thread resolution isn't recorded, because REST doesn't expose it, as appendix C explains.
 
 The store lists every exported span ID, and the worker skips any span already in it.
@@ -83,7 +83,7 @@ Backfilled history gets traces and no metrics.
 
 Every 15 minutes, the reconciler lists each repository's PRs by update time, newest first, with `If-None-Match`. GitHub doesn't count a `304 Not Modified` response against the primary rate limit. For each changed PR, the reconciler walks back to the repository's watermark and reconciles the PR, and once a night it also reconciles every open PR.
 
-An installation of the App gets at least 5,000 requests an hour. One shared request budget of 2,500 an hour covers webhook-triggered reconciles, incremental runs, the nightly sweep, and the backfill, in that priority order. Steady state uses about 450 requests an hour in the worst case, pagination included, about 9% of the 5,000 floor.
+An installation of the App gets at least 5,000 requests an hour. One shared token bucket, refilled at 2,500 requests an hour, serves webhook-triggered reconciles, incremental runs, the nightly sweep, and the backfill, in that priority order. Steady state uses about 450 requests an hour in the worst case, pagination included, about 9% of the 5,000 floor.
 
 The service uses REST only, as requested, and appendix B compares it with GraphQL. Appendix D gives the full budget, the request pacing, the backfill that runs on first install, and the handling of installation tokens and secondary rate limits.
 
@@ -127,16 +127,16 @@ The tunnel routes only the `/webhook` path for the hostname, and the edge answer
 
 ### Data the service keeps and sends
 
-The App's Pull requests read permission reaches more than this service uses. A PR payload carries its title and body, a review payload carries the review's text, and the REST API under the same permission returns PR diffs and the PR files endpoint, so the App can read any code a PR changes (existing, appendix A). The App doesn't have the Contents permission, so it can't read a repository's full contents.
+The App's Pull requests read permission reaches more than this service uses. A PR payload carries its title and body, a review payload carries the review's text, and the REST API under the same permission returns PR diffs and the PR files endpoint, so the App can read any code a PR changes (existing, appendix A). The App doesn't request the Contents, Issues, or Checks permissions.
 
 | Data | Where | Kept for |
 | --- | --- | --- |
-| Raw webhook bodies, with titles and review text | The queue in the store | Until the worker extracts the repository and PR, normally seconds |
+| Raw webhook bodies, with titles and review text | The queue in the store | Until the worker extracts the repository and PR, normally seconds, then logically deleted |
 | Raw bodies that fail to parse | The dead-letter bucket | 7 days, then deleted |
 | Delivery IDs, body hashes, and times | The dedupe table | 7 days, at most 200,000 entries |
 | Span IDs, milestones, watermarks, and `ETag` values | The store | The life of the store |
 
-The store file is proposed at mode `0600`, owned by the image's non-root user, on a volume no other service mounts. Final modes, ownership, and whether backups exist at all are gates of the follow-up in plan step 6, and any backup would hold whatever bodies sit in the queue or dead letters at that moment.
+Deletion from the store is logical: `bbolt` may not zero freed pages, so a deleted body can stay in the file, and in any copy of it, until its pages are reused (unverified). The store file is proposed at mode `0600`, owned by the image's non-root user, on a volume no other service mounts. Final modes, ownership, and whether backups exist at all are gates of the follow-up in plan step 6, and any backup would hold whatever bodies sit in the queue or dead letters at that moment.
 
 Telemetry carries no titles, bodies, comment text, or diffs. It does carry, for private repositories too, repository names, base branch names, PR numbers, logins, and team slugs, and the collector forwards them to the existing backends. Who can read those backends and how long they keep this data is an input the operator owns, to be confirmed by the threat-model follow-up.
 

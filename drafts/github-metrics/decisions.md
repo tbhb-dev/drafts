@@ -15,9 +15,9 @@ The operator decided D1 and D2 on 2026-11-14, and each item names its record. Pl
 
 ### D1. May tbhb-dev create the read-only GitHub App and install it on all repositories?
 
-- **Decided:** 2026-11-14, by the operator: yes.
-- **Rule:** the App has exactly two permissions, read access to pull requests and to metadata, and the two pull request (PR) events that appendix D lists. It reads PR, review, and commit data from every repository, private ones included, and its private key is a new credential.
-- **Reach:** Pull requests read also reaches PR titles, bodies, review text, and PR diffs through the PR and PR files endpoints, so the App can read any code a PR changes. Without the Contents, Issues, or Checks permissions, it can't read a repository's full contents, issues, or continuous integration (CI) results.
+- **Decided:** 2026-11-14, by the operator: yes, on the wording then proposed. That wording named three pull request (PR) events and said the App couldn't read source code.
+- **Rule:** the App has exactly two permissions, read access to pull requests and to metadata. It reads PR, review, and commit data from every repository, private ones included, and its private key is a new credential.
+- **Changed afterwards by platform engineering:** the App now subscribes to two PR events, not three, because D11 drops `pull_request_review_thread`. A review also corrected the reach: Pull requests read reaches PR titles, bodies, review text, and PR diffs through the PR and PR files endpoints, so the App can read any code a PR changes, and it doesn't request the Contents, Issues, or Checks permissions.
 - **Undo:** uninstall or delete the App, which revokes every token at once.
 - **Record:** the operator's answer in chat, 2026-11-14.
 
@@ -66,7 +66,7 @@ The operator decided D1 and D2 on 2026-11-14, and each item names its record. Pl
 ### D8. The service reads GitHub through REST with conditional requests and one shared budget
 
 - **Decided:** 2026-11-14, by platform engineering.
-- **Rule:** the service calls the REST API with `If-None-Match`, one request at a time and at least 250 milliseconds apart. One shared budget of 2,500 requests an hour, half of the 5,000 floor, serves webhook-triggered reconciles first, then incremental runs, the nightly sweep, and the backfill.
+- **Rule:** the service calls the REST API with `If-None-Match`, one request at a time and at least 250 milliseconds apart. One shared token bucket, refilled at 2,500 requests an hour with at most 60 tokens held, serves webhook-triggered reconciles first, then incremental runs, the nightly sweep, and the backfill.
 - **Undo:** move the per-PR fetch to one GraphQL query, as appendix B describes.
 - **Record:** this design's pull request.
 
