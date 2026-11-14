@@ -25,9 +25,9 @@ Platform engineering runs every component that follows.
 - **The service.** One container runs one static Go binary with three loops. A webhook receiver takes deliveries, a worker turns PR state into telemetry, and a reconciler polls the GitHub REST API on a schedule.
 - **The state store.** A `bbolt` file on a small mounted volume keeps the delivery queue, the delivery dedupe table, the IDs of exported spans, the recorded metric milestones, the per-repository watermarks, and the entity tags (`ETag` values) for conditional requests. Everything else in the container is read-only.
 - **The tunnel.** A Cloudflare Tunnel connector on the same host routes only `POST https://github-metrics.tbhb.dev/webhook` to the service. It makes outbound connections only, and the host doesn't forward any port.
-- **The export path.** The service sends OTel Protocol (OTLP) data over HTTP with protobuf encoding to the host's local collector, which forwards traces and metrics to the existing backends.
+- **The export path.** The service sends OTel Protocol (OTLP) data over HTTP with protobuf encoding to the host's local collector, which forwards traces, metrics, and logs to the existing backends.
 
-One deployment serves production, and no staging deployment exists. The first release emits traces and metrics but doesn't export logs. Its own logs go to standard output as structured JSON.
+One deployment serves production, and no staging deployment exists. The first release emits traces, metrics, and logs. The collector sends the logs to Loki, as it does for every service here, and the service also writes them to standard output as structured JSON.
 
 ## How it works
 
@@ -95,6 +95,8 @@ Traces skip the SDK's batch processor: the worker collects the finished spans of
 
 Metrics use a periodic reader every 60 seconds with cumulative aggregation, which keeps running totals in memory instead of a queue. While the process lives, a collector outage loses nothing, because the next accepted export contains the totals. A crash or restart loses every observation since the last accepted export, which during a collector outage spans the whole outage, and backends read the restart as a counter reset.
 
+Logs use the SDK's batch log processor and keep nothing in the store. A collector outage drops the records the exporter can't send, and standard output still has them.
+
 Resource attributes are `service.name=github-metrics`, `service.version`, and `deployment.environment.name=production`. Each span also has `vcs.provider.name=github` and `vcs.owner.name=tbhb-dev`.
 
 ### Failure handling
@@ -109,7 +111,7 @@ Resource attributes are `service.name=github-metrics`, `service.version`, and `d
 ### Webhook security
 
 - The receiver accepts only `POST` with `Content-Type: application/json` on `/webhook`, and answers `405` or `415` to anything else.
-- It caps the body at 5 MB to bound memory for unauthenticated requests. GitHub caps payloads at 25 MB, and how the receiver treats a valid delivery larger than 5 MB is a gate of the follow-up in plan step 6.
+- It streams the body into the hash and caps it at 25 MiB, GitHub's payload limit, which keeps memory constant for an unauthenticated request. A valid delivery never gets a `413`. In plan step 6 the receiver spools the body to a bounded temporary file while it hashes. It verifies the signature, and only then appends to the queue. A global cap on bodies in flight (proposed: four) answers `503` beyond it, which GitHub records as a failed delivery that reconciliation heals. The gate of that step sizes the spool volume and the queue for 25 MiB bodies.
 - It computes a Hash-based Message Authentication Code (HMAC) with SHA-256 over the raw body. It compares the result with `X-Hub-Signature-256` in constant time before parsing, and during a secret rotation it accepts the current or the previous secret.
 - Each log line records the delivery ID, the event name, and the result, never a body, a header value, a token, or a secret.
 - The App private key and the webhook secret come from 1Password through the deploy host's secret manager, mounted as read-only files. The image and the environment never contain them.
@@ -157,9 +159,9 @@ Under the proposed boundary, `github-metrics` covers the PR lifecycle: PRs, revi
 - **Config.** Environment variables set the App ID, the installation ID, the listen addresses, the schedule, and the OTLP endpoint, plus file paths for the two secrets.
 - **Health.** `/healthz` reports liveness, and `/readyz` reports an open store and one finished reconciliation.
 - **Shutdown.** On `SIGTERM`, within 20 seconds, the receiver stops accepting requests and the worker finishes its current PR. Then the meter provider flushes and the store closes.
-- **Logs.** Go's `slog` with the JSON handler, on standard output.
+- **Logs.** Go's `slog` with a handler that writes JSON to standard output and a second handler that exports each record over OTLP to the same collector endpoint as the traces and metrics. The export sets `deployment.environment.name`, which Loki indexes as a label. Standard output stays on as the fallback that a host-level log shipper can read.
 
-Later versions may add log export and other event types, such as issues, discussions, and Actions. The first release leaves them out.
+Later versions may add other event types, such as issues, discussions, and Actions. The first release leaves them out.
 
 ## Risks and unknowns
 
@@ -167,6 +169,7 @@ Later versions may add log export and other event types, such as issues, discuss
 | --- | --- | --- | --- |
 | The backend rejects or hides spans dated weeks in the past | Old PR traces don't appear in search | The first export spike sends a backdated trace and searches for it | Unverified |
 | Backend trace retention is shorter than a PR's life | Early child spans age out before the root arrives | Set retention past the longest expected PR, and report orphans | Unverified |
+| The host collector's log path to Loki differs from what platform engineering described | Logs don't reach Loki | The first export spike sends a log record and searches for it, with the host's shipper reading standard output as the fallback | Unverified |
 | The OTel Go SDK can't set chosen span IDs | The trace model needs another export path | A custom ID generator in the first spike, with OTLP data built directly as the fallback | Unverified |
 | `ETag` values change when the installation token rotates | Fewer free `304` answers | The worst-case budget already assumes every request returns a full response | New, budget in appendix D |
 | The organization collector already emits PR metrics | Duplicate series and doubled API use | Plan step 4 confirms the boundary with that design's owner before step 5 starts | Unverified |
