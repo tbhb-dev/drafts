@@ -10,26 +10,28 @@ Back to [the design](README.md). This appendix lists the planned App's events an
 | Permission | Access | Why |
 | --- | --- | --- |
 | Metadata | Read | GitHub requires it of every App, and the reconciler needs repository metadata |
-| Pull requests | Read | It covers the three subscribed events and every REST call the reconciler makes |
+| Pull requests | Read | It covers the two subscribed events and every REST call the reconciler makes |
 
 GitHub's permission tables put the list endpoints for pull requests (PRs), commits, reviews, and requested reviewers under Pull requests read. They list the issue timeline endpoint under either Issues read or Pull requests read, and that means the timeline works without the Issues permission. When the service requests an installation token, it asks for exactly these two permissions.
+
+Pull requests read reaches more than the service uses: PR titles, bodies, and review text, and PR diffs through the PR and PR files endpoints (existing, appendix A). The service doesn't call the diff or file endpoints, and README section "Data the service keeps and sends" states what it persists.
 
 ## Webhook events
 
 | Event | Actions used | Needs | Why |
 | --- | --- | --- | --- |
 | `pull_request` | `opened`, `closed`, `reopened`, `synchronize`, `review_requested`, `review_request_removed`, `ready_for_review`, `converted_to_draft` | Pull requests read | Lifecycle changes and review requests, as a prompt to reconcile |
-| `pull_request_review` | `submitted`, `dismissed` | Pull requests read | First review and approval milestones |
-| `pull_request_review_thread` | `resolved`, `unresolved` | Pull requests read | Root span events for thread resolution |
+| `pull_request_review` | `submitted`, `dismissed` | Pull requests read | First review and approval milestones, as a prompt to reconcile |
 
-The worker ignores every other action of these events, such as `edited` or `labeled`. Each App also receives `installation` and `installation_repositories` by default without subscribing. The service uses `installation_repositories` with action `added` to start a backfill of a newly added repository.
+The worker ignores every other action of these events, such as `edited` or `labeled`. Each App also receives `installation` and `installation_repositories` by default without subscribing. The service uses an `installation_repositories` body that lists `repositories_added` to start a backfill of each newly added repository.
 
 ### Deliberately excluded
 
+- **`pull_request_review_thread`:** REST doesn't expose a thread's resolved state, so a missed delivery couldn't be healed, and the design takes no telemetry content from webhook bodies. Its payloads would also bring review comment text and diff hunks into the queue.
 - **`pull_request_review_comment`:** each review comment belongs to a review, and the `pull_request_review` event already reports the submission.
 - **`issue_comment`:** conversation comments don't affect the timing metrics, and the event would need the Issues permission.
 - **`check_run` and `check_suite`:** continuous integration (CI) belongs to the organization collector. These events also need Checks read and arrive once per job.
-- **`push`:** it needs Contents read, which grants access to source code. The PR commits endpoint gives the same commits under Pull requests read.
+- **`push`:** it needs Contents read, which grants access to a repository's full contents. The PR commits endpoint gives the same commits under Pull requests read.
 - **Issues, Actions, and workflow events:** later releases may add them.
 
 ### Manifest keys
@@ -44,8 +46,7 @@ The App manifest sets these two keys, with `public` set to `false` and the webho
   },
   "default_events": [
     "pull_request",
-    "pull_request_review",
-    "pull_request_review_thread"
+    "pull_request_review"
   ]
 }
 ```
@@ -55,6 +56,8 @@ The App manifest sets these two keys, with `public` set to `false` and the webho
 1. The service signs a JSON Web Token (JWT) with the App's private key, using RS256, with the App's client ID as `iss`, `iat` 60 seconds in the past, and `exp` 9 minutes ahead, inside GitHub's 10-minute limit.
 2. It exchanges the JWT for an installation token that expires after one hour, and asks only for read access to metadata and pull requests.
 3. It keeps the token in memory and renews it once less than 5 minutes remain. It never writes the token to disk or to a log.
+
+Retiring a previous webhook secret and rotating the App's private key are gates of the threat-model follow-up in README plan step 6.
 
 ## Reconciliation schedule
 
@@ -70,24 +73,46 @@ A webhook schedules the same per-PR reconcile, delayed 30 seconds so a burst of 
 
 GitHub gives an App installation at least 5,000 requests an hour, and installations with more than 20 repositories get 50 more per repository, up to 12,500. Nobody has checked whether that counts every repository or only those past 20. The budget here uses the 5,000 floor.
 
+### Pagination in the estimates
+
+List endpoints return at most 100 items a page. The estimates assume each per-PR fetch of reviews, commits, and timeline averages 4 requests, not 3, because about a third of the lists need a second page, and a PR with more than 100 commits or timeline events needs more (assumption, unverified until the first run measures it).
+
+An incremental run usually needs one PR list page per repository, because the walk stops at the watermark. The estimate adds 4 pages for busy repositories.
+
+### Steady state
+
 | Work | Requests | Per hour, worst case with no `304` |
 | --- | --- | --- |
-| Incremental run: one repository list plus one PR list per repository | 41 | 164 |
-| PRs changed, about 30 an hour: reviews, commits, and timeline | 3 each | 90 |
-| Webhook reconciles, about 30 PRs an hour: the PR, then reviews, commits, and timeline | 4 each | 120 |
-| Total steady state | | 374, about 8% of 5,000 |
+| Incremental run: one repository list, one PR list page per repository, and 4 extra pages | 45 | 180 |
+| PRs changed, about 30 an hour: reviews, commits, and timeline with pagination | 4 each | 120 |
+| Webhook reconciles, about 30 PRs an hour: the PR, then reviews, commits, and timeline | 5 each | 150 |
+| Total steady state | | 450, about 9% of 5,000 |
 
-The nightly sweep adds about 300 requests for 100 open PRs. Most return `304`, and GitHub doesn't count a conditional request that returns `304` against the primary limit, which puts the real cost well below the worst case. Whether `ETag` values change at each hourly token rotation is unverified, and the budget holds either way.
+The nightly sweep adds about 400 requests for 100 open PRs. Most return `304`, and GitHub doesn't count a conditional request that returns `304` against the primary limit, which puts the real cost well below the worst case. Whether `ETag` values change at each hourly token rotation is unverified, and the worst-case figures assume they do.
+
+### One shared budget
+
+Every request goes through one limiter that the backfill, the nightly sweep, the incremental runs, and webhook-triggered reconciles all share. It allows at most 2,500 requests in each clock hour, half of the 5,000 floor, and counts every request it sends, `304` answers included. When several kinds of work wait, it serves them in this order: webhook-triggered reconciles, incremental runs, the nightly sweep, and the backfill.
+
+Backfill therefore gets only what the other work leaves. In an ordinary hour that's about 2,500 − 450 = 2,050 requests, and in the nightly sweep's hour about 2,500 − 450 − 400 = 1,650.
+
+When the hour's 2,500 are spent, all work waits for the next hour, webhook-triggered work first. The service also reads `x-ratelimit-remaining` on every response and stops all work until `x-ratelimit-reset` if fewer than 500 remain, which covers any other use of the installation's limit.
+
+### Pacing for the secondary limit
+
+The secondary limit is 900 points a minute for REST, and most `GET` requests cost 1 point. Sending one request at a time doesn't bound points per minute on its own, so the limiter also spaces requests at least 250 milliseconds apart. That allows at most 240 requests, and so at most 240 points, a minute.
+
+Whether a `304` costs a secondary-limit point is unverified, so the pacer spaces it like any other request.
 
 ### Backfill
 
-With 40 repositories of about 300 PRs each, a backfill reads 12,000 PRs. That's 120 list pages plus about 36,000 per-PR requests. The service throttles the backfill to 2,000 requests an hour, so it takes about 18 hours and never pushes total use past half the limit.
+With 40 repositories of about 300 PRs each, a backfill reads 12,000 PRs. That's 120 list pages plus about 48,000 per-PR requests at 4 each. At about 2,050 requests an hour, it takes about 24 hours, and the shared limiter keeps total use at or under 2,500 an hour throughout.
 
 A backfill writes spans with their original timestamps and records metric milestones as seen, without histogram observations. A PR with more than 250 commits gets only its first 250 commit spans, because the PR commits endpoint returns at most 250.
 
 ### Rate-limit handling
 
-- The service sends one request at a time, as GitHub advises, which keeps it far from the limit of 100 concurrent requests and 900 points a minute.
-- It reads `x-ratelimit-remaining` and `x-ratelimit-reset` on every response. Backfill pauses while less than half the hourly limit remains, and all work waits for the reset when the remaining count reaches zero.
+- The limiter sends one request at a time, at least 250 milliseconds apart, within the shared hourly budget.
+- It reads `x-ratelimit-remaining` and `x-ratelimit-reset` on every response, and stops all work until the reset when fewer than 500 remain.
 - On a secondary rate limit, the service waits for `retry-after` when present, and otherwise at least one minute, doubling up to 15 minutes.
 - A `401` renews the installation token once, and a second `401` stops the run and logs the failure.

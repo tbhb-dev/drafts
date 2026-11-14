@@ -35,8 +35,16 @@ The OTel Collector has a contributed GitHub receiver that scrapes repository met
 
 ## The redelivery API as a healer
 
-The service could list failed deliveries and redeliver them with an App-level JSON Web Token (JWT). Reconciliation already reads the PR's current state and heals the same gaps. A second healing path adds code and a second credential use for little gain.
+The service could list failed deliveries and redeliver them with an App-level JSON Web Token (JWT). Reconciliation heals only what the REST API shows, so it can't recover a fact that exists only in a webhook, such as a review thread's resolution. This design records no webhook-only fact, which makes reconciliation a complete healer here, and redelivery would add only lower latency for the cost of more code and a second credential use.
 
 ## Author login as a metric attribute
 
 Per-author histograms would show who waits longest. Public repositories accept PRs from anyone, so the login set has no bound, and per-person timing invites a use nobody asked for. Traces still record the author of each PR.
+
+## Re-exporting the root after a reopen
+
+The root could go out again with the same IDs and a later end time each time a reopened PR changes state. That relies on how each backend treats two spans with one ID, which this draft hasn't checked, and the stateless option above notes that backends don't reliably drop a repeat. Child spans for the reopen and the later close or merge carry the same facts without a duplicate root.
+
+## Webhook payloads as a telemetry source
+
+The worker could read facts such as review thread resolution straight from webhook bodies. A missed delivery would then lose those facts for good, because reconciliation can't fetch them, and a payload carries no GitHub timestamp for some changes. Taking content only from REST keeps one source of truth and lets the queue drop each body once the PR is marked.
